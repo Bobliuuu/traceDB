@@ -71,6 +71,8 @@ class Store:
         self.dir = os.path.join(root, name)
         os.makedirs(os.path.join(self.dir, "blocks"), exist_ok=True)
         self.cache_bytes = cache_bytes
+        self._csize: Optional[int] = None  # running cache size; lazily initialised, persisted lazily
+        self._cdirty = 0
         self.db = sqlite3.connect(os.path.join(self.dir, "catalog.sqlite"), check_same_thread=False)
         self.db.executescript(SCHEMA)
         self.db.execute("PRAGMA journal_mode=WAL")
@@ -308,7 +310,12 @@ class Store:
         try:
             with open(cp, "rb") as f:
                 self.stats["cache_hits"] += 1
-                return f.read()
+                d = f.read()
+            try:
+                os.utime(cp, None)  # LRU: refresh atime explicitly (noatime/relatime mounts)
+            except OSError:
+                pass
+            return d
         except FileNotFoundError:
             pass
         data = self.b.get(f"packs/{pk}.pack", a, b)
@@ -318,7 +325,70 @@ class Store:
         with open(tmp, "wb") as f:
             f.write(data)
         os.replace(tmp, cp)
+        self._cache_added(len(data))
         return data
+
+    # ---- bounded block cache: running counter + batch LRU eviction (no directory walk per read)
+    def _csize_file(self):
+        return os.path.join(self.dir, "blocks", ".size")
+
+    def _cache_walk(self):
+        out = []
+        for dp, _, fs in os.walk(os.path.join(self.dir, "blocks")):
+            for f in fs:
+                if f.startswith(".") or f.endswith(".tmp"):
+                    continue
+                full = os.path.join(dp, f)
+                try:
+                    st = os.stat(full)
+                except FileNotFoundError:
+                    continue
+                out.append((max(st.st_atime, st.st_mtime), st.st_size, full))
+        return out
+
+    def _cache_added(self, n: int) -> None:
+        if not self.cache_bytes or self.cache_bytes < 0:
+            return
+        with self._lock:
+            if self._csize is None:
+                try:
+                    with open(self._csize_file()) as f:
+                        self._csize = int(f.read()) + n
+                except (OSError, ValueError):
+                    self._csize = sum(x[1] for x in self._cache_walk())
+            else:
+                self._csize += n
+            self._cdirty += 1
+            if self._csize > self.cache_bytes * 1.1:
+                self.evict_cache()
+            elif self._cdirty >= 256:
+                self._cache_persist()
+
+    def _cache_persist(self):
+        self._cdirty = 0
+        try:
+            with open(self._csize_file(), "w") as f:
+                f.write(str(self._csize or 0))
+        except OSError:
+            pass
+
+    def evict_cache(self, target: float = 0.8) -> int:
+        """Delete least-recently-used cached ranges until size <= target*cache_bytes. Returns bytes freed."""
+        with self._lock:
+            files = sorted(self._cache_walk())
+            total = sum(x[1] for x in files)
+            goal = int(self.cache_bytes * target)
+            freed = 0
+            for _, sz, full in files:
+                if total - freed <= goal:
+                    break
+                try:
+                    os.unlink(full); freed += sz
+                except FileNotFoundError:
+                    pass
+            self._csize = total - freed
+            self._cache_persist()
+            return freed
 
     def read_many(self, reqs: list, max_bytes: Optional[int] = None) -> dict:
         """Parallel, coalesced, budgeted read. Returns {(path,start,end)->bytes}. Budget applies to raw bytes."""
@@ -382,6 +452,11 @@ class Store:
                     bad.append(p)
         return {"entries": self.count(), "packs": len(packs), "missing_packs": missing,
                 "short_packs": short, "bad_content": bad, "ok": not (missing or short or bad)}
+
+    def gc(self, grace_seconds: float = 3600, dry_run: bool = True) -> dict:
+        """Delete unreferenced packs/segments older than grace. See tracedb/gc.py."""
+        from .gc import gc
+        return gc(self, grace_seconds, dry_run)
 
     def export_catalog(self) -> Iterable[dict]:
         """Plain listing for siloed consumers (ontolagni): path, sha, size, meta. No tracedb code needed to read."""

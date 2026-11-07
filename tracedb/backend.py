@@ -18,6 +18,14 @@ class Backend:
     def get_head(self) -> tuple[Optional[bytes], Optional[str]]: ...
     def cas_head(self, data: bytes, etag: Optional[str]) -> str: ...
     def list(self, prefix: str) -> Iterable[tuple[str, int]]: ...
+    def list_mtime(self, prefix: str) -> Iterable[tuple[str, int, float]]:
+        """Like list() but yields (key, size, mtime_epoch_seconds). list() stays 2-tuples for compatibility."""
+        raise NotImplementedError
+
+    def delete(self, key: str) -> None:
+        """Delete one object; missing key is not an error. Never used on HEAD."""
+        raise NotImplementedError
+
     def warm(self, n: int) -> None:
         """Open n connections ahead of time (no-op for local)."""
 
@@ -86,13 +94,29 @@ class LocalBackend(Backend):
             return hashlib.sha256(data).hexdigest()
 
     def list(self, prefix):
+        for key, size, _ in self.list_mtime(prefix):
+            yield key, size
+
+    def list_mtime(self, prefix):
         base = self._p(prefix)
         for dp, _, fs in os.walk(base if os.path.isdir(base) else os.path.dirname(base)):
             for f in fs:
                 full = os.path.join(dp, f)
                 key = os.path.relpath(full, self.root)
                 if key.startswith(prefix) and not f.startswith(".tmp-"):
-                    yield key, os.path.getsize(full)
+                    try:
+                        st = os.stat(full)
+                    except FileNotFoundError:
+                        continue
+                    yield key, st.st_size, st.st_mtime
+
+    def delete(self, key):
+        if key == self.HEAD:
+            raise ValueError("refusing to delete HEAD")
+        try:
+            os.unlink(self._p(key))
+        except FileNotFoundError:
+            pass
 
 
 class S3Backend(Backend):
@@ -168,3 +192,14 @@ class S3Backend(Backend):
         for page in pg.paginate(Bucket=self.bucket, Prefix=self._k(prefix)):
             for o in page.get("Contents", []):
                 yield o["Key"][len(self.prefix):], o["Size"]
+
+    def list_mtime(self, prefix):
+        pg = self.c.get_paginator("list_objects_v2")
+        for page in pg.paginate(Bucket=self.bucket, Prefix=self._k(prefix)):
+            for o in page.get("Contents", []):
+                yield o["Key"][len(self.prefix):], o["Size"], o["LastModified"].timestamp()
+
+    def delete(self, key):
+        if key == "HEAD":
+            raise ValueError("refusing to delete HEAD")
+        self.c.delete_object(Bucket=self.bucket, Key=self._k(key))

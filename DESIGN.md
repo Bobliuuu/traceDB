@@ -41,6 +41,6 @@ Pre-warming the connection pool at first sync removed ~100 ms of serial TLS hand
 ## Known gaps / next
 - Benchmark from inside AWS (same region): laptop RTT dominates the numbers above.
 - Appending to a growing jsonl re-stores the whole file (dedup is whole-file sha). Tail-append segments would fix it.
-- GC of orphaned packs/segments, cache eviction (cache dir is unbounded today).
+- GC: `tracedb gc [--apply] [--grace S]` (dry-run default, grace-protected); block cache is LRU-bounded by cache_bytes (default 2 GiB, batch eviction at 110%).
 - Path overwrite = latest segment wins; no history API yet.
 - In-process catalog only; a daemon/mmap'd shared catalog would help many agents on one box.
