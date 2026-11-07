@@ -207,11 +207,16 @@ class Store:
                               "e": (base[1] if base else []) + [ext], "_new": ext})
             cur.append(enc); cur_len += len(enc)
         flush()
-        list(self._pool.map(lambda pb: self.b.put_if_absent(f"packs/{pb[0]}.pack", pb[1]), packs))
+        def up(pb):  # already-existing pack (dedup / old orphan): refresh its age so GC grace protects it
+            k = f"packs/{pb[0]}.pack"
+            if not self.b.put_if_absent(k, pb[1]):
+                self.b.touch(k)
+        list(self._pool.map(up, packs))
         wire = sum(len(b) for _, b in packs)
         seg = zlib.compress("\n".join(json.dumps(self._wire_row(r), separators=(",", ":")) for r in rows).encode(), 1)
         sid = _sha(seg)
-        self.b.put_if_absent(f"segments/{sid}.seg", seg)
+        if not self.b.put_if_absent(f"segments/{sid}.seg", seg):
+            self.b.touch(f"segments/{sid}.seg")
         for _ in range(retries):
             raw, etag = self.b.get_head()
             segs = json.loads(raw)["segments"] if raw else []

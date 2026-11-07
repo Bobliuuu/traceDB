@@ -3,7 +3,7 @@
 All writes are create-only (put_if_absent) except HEAD, which is a compare-and-swap.
 """
 from __future__ import annotations
-import os, tempfile, threading, hashlib
+import os, time, tempfile, threading, hashlib
 from typing import Iterable, Optional
 
 
@@ -21,6 +21,9 @@ class Backend:
     def list_mtime(self, prefix: str) -> Iterable[tuple[str, int, float]]:
         """Like list() but yields (key, size, mtime_epoch_seconds). list() stays 2-tuples for compatibility."""
         raise NotImplementedError
+
+    def touch(self, key: str) -> None:
+        """Refresh an existing object's mtime so GC's grace period protects it."""
 
     def delete(self, key: str) -> None:
         """Delete one object; missing key is not an error. Never used on HEAD."""
@@ -110,6 +113,12 @@ class LocalBackend(Backend):
                         continue
                     yield key, st.st_size, st.st_mtime
 
+    def touch(self, key):
+        try:
+            os.utime(self._p(key))
+        except FileNotFoundError:
+            pass
+
     def delete(self, key):
         if key == self.HEAD:
             raise ValueError("refusing to delete HEAD")
@@ -198,6 +207,11 @@ class S3Backend(Backend):
         for page in pg.paginate(Bucket=self.bucket, Prefix=self._k(prefix)):
             for o in page.get("Contents", []):
                 yield o["Key"][len(self.prefix):], o["Size"], o["LastModified"].timestamp()
+
+    def touch(self, key):
+        k = self._k(key)
+        self.c.copy_object(Bucket=self.bucket, Key=k, CopySource={"Bucket": self.bucket, "Key": k},
+                           MetadataDirective="REPLACE", Metadata={"touched": str(int(time.time()))})
 
     def delete(self, key):
         if key == "HEAD":

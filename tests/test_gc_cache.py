@@ -109,3 +109,21 @@ def test_cache_bounded_and_reads_correct(tmp_path):
     assert sum(x[1] for x in st._cache_walk()) <= cap * 0.8
     for p, b in data.items():
         assert st.read(p) == b
+
+
+def test_reupload_of_old_orphan_pack_is_protected_from_gc(tmp_path):
+    """Race fix: identical content re-put onto an old orphan pack must refresh its age so GC cannot reap it."""
+    import json
+    st = mkstore(tmp_path)
+    data = os.urandom(5000)
+    st.put([("a", data, None)])
+    pk = st.locate("a")["pack"]
+    pkey = f"packs/{pk}.pack"
+    st.b.cas_head(json.dumps({"v": 1, "segments": []}).encode(), st.b.get_head()[1])  # crash: pack now orphaned
+    age(st, pkey, 10 * 86400)
+    st2 = mkstore(tmp_path)  # fresh client, empty catalog
+    st2.db.execute("DELETE FROM entries"); st2.db.execute("DELETE FROM segs"); st2.db.commit()
+    st2.put([("a", data, None)])  # dedup hit on the old orphan pack -> touch
+    assert time.time() - os.path.getmtime(st.b._p(pkey)) < 60
+    st2.gc(grace_seconds=3600, dry_run=False)
+    assert st2.read("a") == data and st2.verify(deep=True)["ok"]
