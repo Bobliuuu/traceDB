@@ -36,6 +36,7 @@ def main(argv=None):
     p.add_argument("--head", type=int); p.add_argument("--tail", type=int)
     p = sp.add_parser("verify"); p.add_argument("--deep", action="store_true")
     sp.add_parser("compact")
+    p = sp.add_parser("gc"); p.add_argument("--apply", action="store_true"); p.add_argument("--grace", type=float, default=3600)
     p = sp.add_parser("export-catalog"); p.add_argument("--out", default="-")
     a = ap.parse_args(argv)
     if not a.store:
@@ -73,6 +74,8 @@ def main(argv=None):
             sys.stdout.buffer.write(d)
         elif a.cmd == "verify":
             r = st.verify(a.deep); out(r); return 0 if r["ok"] else 2
+        elif a.cmd == "gc":
+            out(st.gc(a.grace, dry_run=not a.apply))
         elif a.cmd == "compact":
             out(st.compact())
         elif a.cmd == "export-catalog":

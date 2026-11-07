@@ -50,6 +50,7 @@ Concurrent appenders to the *same* path: last committed row wins (same as overwr
 
 ## Known gaps / next
 - Benchmark from inside AWS (same region): laptop RTT dominates the numbers above.
-- GC of orphaned packs/segments, cache eviction (cache dir is unbounded today).
+- GC: `tracedb gc [--apply] [--grace S]` (dry-run default, grace-protected); block cache is LRU-bounded (default 2 GiB). GC race: a writer re-uploading identical content to an *old orphan* pack does not refresh its age; run GC rarely (put pre-CAS pack re-check is TODO).
+- Appends to growing files store only the tail (extents); edited (non-prefix) files are stored whole.
 - Path overwrite = latest segment wins; no history API yet.
 - In-process catalog only; a daemon/mmap'd shared catalog would help many agents on one box.
