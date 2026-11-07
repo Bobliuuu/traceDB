@@ -1,0 +1,12 @@
+BASE raw=40.0MiB packs=19.84MiB put=2.48s
+APPEND 0 tail=100KiB added_pack=49KiB put=45ms
+APPEND 1 tail=100KiB added_pack=49KiB put=52ms
+APPEND 2 tail=100KiB added_pack=49KiB put=48ms
+APPEND 3 tail=100KiB added_pack=49KiB put=43ms
+APPEND 4 tail=100KiB added_pack=49KiB put=52ms
+APPEND 5 tail=100KiB added_pack=49KiB put=58ms
+APPEND 6 tail=100KiB added_pack=49KiB put=50ms
+APPEND 7 tail=100KiB added_pack=49KiB put=52ms
+APPEND 8 tail=100KiB added_pack=49KiB put=59ms
+APPEND 9 tail=100KiB added_pack=49KiB put=54ms
+SUMMARY appends=10 avg_added=49KiB (whole-file re-store would add ~19.8MiB each, 198MiB total vs 0.48MiB) avg_put=51ms (base put 2481ms) extents=11 total_packs=20.32MiB tail4k_cold=0.5ms verify_deep=ok

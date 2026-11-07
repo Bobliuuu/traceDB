@@ -38,9 +38,18 @@ Random small files: tuned by sweep (workers x merge gap). 1000 random small file
 -> **774 ms / 1.8x** (64 workers, 64K gap, now the defaults). 100 random: 334 ms. Single file after pre-warm: 68 ms (one RTT).
 Pre-warming the connection pool at first sync removed ~100 ms of serial TLS handshakes from the first read.
 
+## Append-only growth (extents)
+An entry is a list of extents (pack, off, clen, per-1MiB block lens, codecs, raw length) laid end to end in raw space; blocks are
+per extent, so a boundary need not be block aligned. `put` of a path whose new bytes start with the stored bytes (sha of
+`data[:old_size]` == stored sha) encodes and stores only the tail as a new extent; the new segment row carries the full extent
+list (latest row wins, so replay is order-independent). Single-extent rows keep the original flat format (old segments load
+unchanged); multi-extent rows use `"e":[...]`. After 64 extents the next append rewrites the file as one extent. Compaction,
+verify and export keep extents. Measured (`bench/bench_append.py`, local): 40 MiB session + 10 x 100 KiB appends adds ~49 KiB of
+pack per append (vs ~19.8 MiB whole-file), ~50 ms per put.
+Concurrent appenders to the *same* path: last committed row wins (same as overwrite); the other tail is not merged.
+
 ## Known gaps / next
 - Benchmark from inside AWS (same region): laptop RTT dominates the numbers above.
-- Appending to a growing jsonl re-stores the whole file (dedup is whole-file sha). Tail-append segments would fix it.
 - GC of orphaned packs/segments, cache eviction (cache dir is unbounded today).
 - Path overwrite = latest segment wins; no history API yet.
 - In-process catalog only; a daemon/mmap'd shared catalog would help many agents on one box.

@@ -18,6 +18,7 @@ from . import codec as C
 
 PACK_TARGET = 32 << 20
 SEG_COMPACT_AT = 64
+MAX_EXTENTS = 64  # past this an append rewrites the file as one extent (bounds per-read request fan-out)
 DEFAULT_BUDGET = int(os.environ.get("TRACEDB_MAX_BYTES", 8 << 20))
 COALESCE_GAP = int(os.environ.get("TRACEDB_GAP", 64 << 10))
 
@@ -50,7 +51,7 @@ class Plan:
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS entries(
   path TEXT PRIMARY KEY, sha TEXT, size INTEGER, pack TEXT, off INTEGER, clen INTEGER,
-  blocks TEXT, codecs TEXT, meta TEXT) WITHOUT ROWID;
+  blocks TEXT, codecs TEXT, meta TEXT, exts TEXT) WITHOUT ROWID;
 CREATE INDEX IF NOT EXISTS entries_sha ON entries(sha);
 CREATE TABLE IF NOT EXISTS segs(id TEXT PRIMARY KEY, ord INTEGER);
 CREATE TABLE IF NOT EXISTS kv(k TEXT PRIMARY KEY, v TEXT);
@@ -72,6 +73,9 @@ class Store:
         os.makedirs(os.path.join(self.dir, "blocks"), exist_ok=True)
         self.cache_bytes = cache_bytes
         self.db = sqlite3.connect(os.path.join(self.dir, "catalog.sqlite"), check_same_thread=False)
+        cols = [r[1] for r in self.db.execute("PRAGMA table_info(entries)")]
+        if cols and "exts" not in cols:  # catalog cache from before multi-extent: rebuildable from segments
+            self.db.executescript("DROP TABLE entries; DROP TABLE segs;")
         self.db.executescript(SCHEMA)
         self.db.execute("PRAGMA journal_mode=WAL")
         self.db.execute("PRAGMA synchronous=OFF")  # catalog is a rebuildable cache of immutable segments
@@ -119,11 +123,31 @@ class Store:
             self.db.commit()
             return {"segments": len(ids), "new": len(new), "entries": self.count()}
 
+    @staticmethod
+    def _exts_of(r) -> list:
+        """Segment row -> extent list. Old rows (flat k/o/c/b/x) are one extent; new multi-extent rows carry "e"."""
+        if "e" in r:
+            return r["e"]
+        return [{"k": r["k"], "o": r["o"], "c": r["c"], "b": r["b"], "x": r["x"], "r": r["n"]}]
+
+    @staticmethod
+    def _wire_row(r) -> dict:
+        """Internal row {p,h,n,m,e} -> segment JSON. One extent stays in the original flat format (old readers work)."""
+        if len(r["e"]) == 1:
+            x = r["e"][0]
+            return {"p": r["p"], "h": r["h"], "n": r["n"], "k": x["k"], "o": x["o"], "c": x["c"],
+                    "b": x["b"], "x": x["x"], "m": r["m"]}
+        return {"p": r["p"], "h": r["h"], "n": r["n"], "e": r["e"], "m": r["m"]}
+
     def _apply(self, rows):
-        self.db.executemany(
-            "INSERT OR REPLACE INTO entries VALUES(?,?,?,?,?,?,?,?,?)",
-            [(r["p"], r["h"], r["n"], r["k"], r["o"], r["c"], json.dumps(r["b"], separators=(",", ":")),
-              r["x"], json.dumps(r.get("m") or {}, separators=(",", ":"))) for r in rows])
+        out = []
+        for r in rows:
+            ex = self._exts_of(r)
+            f = ex[0]
+            out.append((r["p"], r["h"], r["n"], f["k"], f["o"], f["c"], json.dumps(f["b"], separators=(",", ":")),
+                        f["x"], json.dumps(r.get("m") or {}, separators=(",", ":")),
+                        json.dumps(ex, separators=(",", ":"))))
+        self.db.executemany("INSERT OR REPLACE INTO entries VALUES(?,?,?,?,?,?,?,?,?,?)", out)
 
     def count(self) -> int:
         return self.db.execute("SELECT COUNT(*) FROM entries").fetchone()[0]
@@ -139,10 +163,14 @@ class Store:
                 with open(data, "rb") as f:
                     data = f.read()
             h = _sha(data)
-            row = self.db.execute("SELECT sha FROM entries WHERE path=?", (path,)).fetchone()
+            row = self.db.execute("SELECT sha,size,exts,meta FROM entries WHERE path=?", (path,)).fetchone()
             if row and row[0] == h:
                 continue
-            todo.append((path, data, h, meta))
+            base = None  # (old_size, old_exts, old_meta) when data strictly extends the stored content
+            if row and 0 < row[1] < len(data) and len(json.loads(row[2])) < MAX_EXTENTS \
+                    and _sha(memoryview(data)[:row[1]]) == row[0]:
+                base = (row[1], json.loads(row[2]), json.loads(row[3]))
+            todo.append((path, data, h, meta, base))
         if not todo:
             return {"added": 0, "packs": 0, "bytes": 0}
         todo.sort(key=lambda t: t[0])  # path order = locality (same dir adjacent in a pack)
@@ -156,26 +184,30 @@ class Store:
             blob = b"".join(cur)
             pid = _sha(blob)
             for r in pack_rows:
-                r["k"] = pid
+                r.pop("_new")["k"] = pid
             packs.append((pid, blob)); rows.extend(pack_rows)
             cur, cur_len, pack_rows = [], 0, []
 
-        for path, data, h, meta in todo:
+        for path, data, h, meta, base in todo:
+            skip = base[0] if base else 0  # append: only the new tail is encoded and stored
             blocks, codecs, parts = [], [], []
-            for i in range(0, max(len(data), 1), C.BLOCK):
-                cdc, cb = C.compress(data[i:i + C.BLOCK])
+            mv = memoryview(data)
+            for i in range(skip, max(len(data), 1), C.BLOCK):
+                cdc, cb = C.compress(bytes(mv[i:i + C.BLOCK]))
                 blocks.append(len(cb)); codecs.append(cdc); parts.append(cb)
             enc = b"".join(parts)
             if cur and cur_len + len(enc) > PACK_TARGET:
                 flush()
-            pack_rows.append({"p": path, "h": h, "n": len(data), "k": "", "o": cur_len, "c": len(enc),
-                              "b": blocks, "x": ",".join(sorted(set(codecs))) if len(set(codecs)) == 1 else "|".join(codecs),
-                              "m": meta})
+            ext = {"k": "", "o": cur_len, "c": len(enc), "b": blocks,
+                   "x": ",".join(sorted(set(codecs))) if len(set(codecs)) == 1 else "|".join(codecs),
+                   "r": len(data) - skip}
+            pack_rows.append({"p": path, "h": h, "n": len(data), "m": meta if meta is not None or not base else base[2],
+                              "e": (base[1] if base else []) + [ext], "_new": ext})
             cur.append(enc); cur_len += len(enc)
         flush()
         list(self._pool.map(lambda pb: self.b.put_if_absent(f"packs/{pb[0]}.pack", pb[1]), packs))
         wire = sum(len(b) for _, b in packs)
-        seg = zlib.compress("\n".join(json.dumps(r, separators=(",", ":")) for r in rows).encode(), 1)
+        seg = zlib.compress("\n".join(json.dumps(self._wire_row(r), separators=(",", ":")) for r in rows).encode(), 1)
         sid = _sha(seg)
         self.b.put_if_absent(f"segments/{sid}.seg", seg)
         for _ in range(retries):
@@ -192,38 +224,43 @@ class Store:
             raise RuntimeError("HEAD CAS kept conflicting")
         self.sync()
         if len(segs) >= SEG_COMPACT_AT:
-            self.compact()
+            try:
+                self.compact()
+            except CASConflict:
+                pass  # someone committed meanwhile; a later put will compact
         return {"added": len(rows), "packs": len(packs), "bytes": wire, "segment": sid}
 
     def compact(self) -> dict:
-        """Merge all segments into one. Old segments stay (orphans) until GC; HEAD flip is atomic."""
-        self.sync()
-        rows = []
-        for r in self.db.execute("SELECT path,sha,size,pack,off,clen,blocks,codecs,meta FROM entries ORDER BY path"):
-            rows.append({"p": r[0], "h": r[1], "n": r[2], "k": r[3], "o": r[4], "c": r[5],
-                         "b": json.loads(r[6]), "x": r[7], "m": json.loads(r[8])})
-        seg = zlib.compress("\n".join(json.dumps(r, separators=(",", ":")) for r in rows).encode(), 1)
+        """Merge all segments into one. Old segments stay (orphans) until GC; HEAD flip is atomic.
+        The CAS uses the etag seen at the sync that built the snapshot, so a segment committed meanwhile
+        makes this raise CASConflict instead of silently dropping it."""
+        with self._lock:
+            self.sync()
+            etag = self._head_etag
+            rows = []
+            for r in self.db.execute("SELECT path,sha,size,meta,exts FROM entries ORDER BY path"):
+                rows.append({"p": r[0], "h": r[1], "n": r[2], "m": json.loads(r[3]), "e": json.loads(r[4])})
+        seg = zlib.compress("\n".join(json.dumps(self._wire_row(r), separators=(",", ":")) for r in rows).encode(), 1)
         sid = _sha(seg)
         self.b.put_if_absent(f"segments/{sid}.seg", seg)
-        raw, etag = self.b.get_head()
         self.b.cas_head(json.dumps({"v": 1, "segments": [sid], "ts": time.time()}).encode(), etag)
         self.sync()
         return {"entries": len(rows), "segment": sid}
 
     # ------------------------------------------------------------------ read
     def locate(self, path: str) -> Optional[dict]:
-        r = self.db.execute("SELECT path,sha,size,pack,off,clen,blocks,codecs,meta FROM entries WHERE path=?",
+        r = self.db.execute("SELECT path,sha,size,pack,off,clen,blocks,codecs,meta,exts FROM entries WHERE path=?",
                             (path,)).fetchone()
         return self._row(r) if r else None
 
     def locate_sha(self, sha: str) -> list[dict]:
         return [self._row(r) for r in self.db.execute(
-            "SELECT path,sha,size,pack,off,clen,blocks,codecs,meta FROM entries WHERE sha=?", (sha,))]
+            "SELECT path,sha,size,pack,off,clen,blocks,codecs,meta,exts FROM entries WHERE sha=?", (sha,))]
 
     @staticmethod
     def _row(r):
         return {"path": r[0], "sha": r[1], "size": r[2], "pack": r[3], "off": r[4], "clen": r[5],
-                "blocks": json.loads(r[6]), "codecs": r[7], "meta": json.loads(r[8])}
+                "blocks": json.loads(r[6]), "codecs": r[7], "meta": json.loads(r[8]), "exts": json.loads(r[9])}
 
     def ls(self, prefix: str = "", limit: int = 1000, glob: Optional[str] = None) -> list[dict]:
         hi = prefix + "\U0010ffff"
@@ -262,22 +299,30 @@ class Store:
             start = min(start, end)
             pl.paths += 1; pl.raw_bytes += end - start
             pl.items.append((path, start, end))
-            for bi, off, cl in self._blocks_for(e, start, end):
-                spans.append((e["pack"], off, off + cl))
+            for pk, off, cl, *_ in self._blocks_for(e, start, end):
+                spans.append((pk, off, off + cl))
         pl.fetch_bytes, pl.requests = self._coalesce_stats(spans)
         return pl
 
     @staticmethod
     def _blocks_for(e, start, end):
-        """yield (block_index, abs_pack_offset, clen) covering raw [start,end)."""
+        """yield (pack, abs_pack_offset, clen, extent_idx, block_idx) for every block covering raw [start,end).
+        An entry is a list of extents laid end to end in raw space; blocks are per extent (1 MiB from the extent's
+        own start), so an extent boundary need not be block aligned."""
         if e["size"] == 0 or end <= start:
             return
-        offs, o = [], e["off"]
-        for cl in e["blocks"]:
-            offs.append((o, cl)); o += cl
-        b0, b1 = start // C.BLOCK, max(start, end - 1) // C.BLOCK
-        for bi in range(b0, min(b1, len(offs) - 1) + 1):
-            yield bi, offs[bi][0], offs[bi][1]
+        rb = 0
+        for xi, x in enumerate(e["exts"]):
+            rl = x["r"]
+            s, t = max(start, rb) - rb, min(end, rb + rl) - rb
+            rb += rl
+            if t <= s:
+                continue
+            offs, o = [], x["o"]
+            for cl in x["b"]:
+                offs.append((o, cl)); o += cl
+            for bi in range(s // C.BLOCK, min((t - 1) // C.BLOCK, len(offs) - 1) + 1):
+                yield x["k"], offs[bi][0], offs[bi][1], xi, bi
 
     @staticmethod
     def _merge(spans):
@@ -332,7 +377,7 @@ class Store:
             e = self.locate(path)
             bl = list(self._blocks_for(e, start, end))
             per_item.append((e, start, end, bl))
-            spans += [(e["pack"], off, off + cl) for _, off, cl in bl]
+            spans += [(pk, off, off + cl) for pk, off, cl, _, _ in bl]
         merged = self._merge(spans)
         blobs = dict(zip(map(tuple, merged), self._pool.map(self._fetch_span, map(tuple, merged))))
 
@@ -343,12 +388,21 @@ class Store:
             raise AssertionError("span missing")
         out = {}
         for e, start, end, bl in per_item:
-            codecs = e["codecs"].split("|") if "|" in e["codecs"] else [e["codecs"]] * len(e["blocks"])
-            raw = bytearray()
-            for bi, off, cl in bl:
-                raw += C.decompress(codecs[bi], cut(e["pack"], off, off + cl))
-            base = (start // C.BLOCK) * C.BLOCK
-            out[(e["path"], start, end)] = bytes(raw[start - base:end - base])
+            raw = {}  # (extent, block) -> decompressed
+            for pk, off, cl, xi, bi in bl:
+                x = e["exts"][xi]
+                cdc = x["x"].split("|") if "|" in x["x"] else [x["x"]] * len(x["b"])
+                raw[(xi, bi)] = C.decompress(cdc[bi], cut(pk, off, off + cl))
+            buf, rb = bytearray(), 0
+            for xi, x in enumerate(e["exts"]):
+                s, t = max(start, rb) - rb, min(end, rb + x["r"]) - rb
+                rb += x["r"]
+                if t <= s:
+                    continue
+                piece = b"".join(raw[(xi, bi)] for bi in range(s // C.BLOCK, (t - 1) // C.BLOCK + 1))
+                base = (s // C.BLOCK) * C.BLOCK
+                buf += piece[s - base:t - base]
+            out[(e["path"], start, end)] = bytes(buf)
         return out
 
     def read(self, path: str, start: int = 0, end: Optional[int] = None, max_bytes: Optional[int] = None) -> bytes:
@@ -366,8 +420,9 @@ class Store:
         """Every catalog entry's pack exists and is large enough; deep also re-hashes content."""
         self.sync()
         packs = {}
-        for pk, mx in self.db.execute("SELECT pack, MAX(off+clen) FROM entries GROUP BY pack"):
-            packs[pk] = mx
+        for (ex,) in self.db.execute("SELECT exts FROM entries"):
+            for x in json.loads(ex):
+                packs[x["k"]] = max(packs.get(x["k"], 0), x["o"] + x["c"])
         missing, short = [], []
         for pk, need in packs.items():
             sz = self.b.size(f"packs/{pk}.pack")
