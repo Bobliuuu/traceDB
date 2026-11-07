@@ -3,6 +3,21 @@ import argparse, json, os, sys, time
 from .store import open_store, BudgetExceeded, NotFound
 
 
+def sniff(full: str, meta: dict) -> dict:
+    """Cheap, deterministic metadata at ingest: top-level keys of the first json/jsonl record."""
+    import json as _j
+    try:
+        if full.endswith((".jsonl", ".json")) and os.path.getsize(full) < (64 << 20):
+            with open(full, "rb") as f:
+                line = f.readline(1 << 16) if full.endswith(".jsonl") else f.read(1 << 16)
+            o = _j.loads(line)
+            if isinstance(o, dict):
+                return {**meta, "keys": list(o)[:24]}
+    except Exception:
+        pass
+    return meta
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="tracedb")
     ap.add_argument("--store", default=os.environ.get("TRACEDB_STORE"))
@@ -36,11 +51,11 @@ def main(argv=None):
             meta = json.loads(a.meta)
             def gen():
                 if os.path.isfile(root):
-                    yield (a.prefix + os.path.basename(root), root, meta); return
+                    yield (a.prefix + os.path.basename(root), root, sniff(root, meta)); return
                 for dp, _, fs in os.walk(root):
                     for f in fs:
                         full = os.path.join(dp, f)
-                        yield (a.prefix + os.path.relpath(full, root), full, meta)
+                        yield (a.prefix + os.path.relpath(full, root), full, sniff(full, meta))
             t = time.time(); r = st.put(gen()); r["secs"] = round(time.time() - t, 2); out(r)
         elif a.cmd == "locate":
             st.sync(); out(st.locate(a.path) or {"error": "not found"})

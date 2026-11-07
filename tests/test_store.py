@@ -141,3 +141,15 @@ def test_corrupt_segment_rejected(tmp_path):
     b = Store(be, cache_dir=str(tmp_path / "cb"), name="b")
     with pytest.raises(IOError):
         b.sync()
+
+
+def test_rsi_bridge_atomic_and_roundtrip(st, tmp_path):
+    from tracedb.rsi import trace_store_put, trace_store_get
+    d = tmp_path / "chunk"; d.mkdir()
+    (d / "events-00000001-00000034.jsonl").write_text('{"seq":1}\n' * 34)
+    ptr = trace_store_put(st, [str(d)], "rsi-store")
+    assert ptr.startswith("tdb://")
+    man = [e for e in st.ls("rsi-store/") if e["path"].endswith("manifest.json")]
+    assert len(man) == 1                       # manifest and data landed in one segment/CAS
+    got = trace_store_get(st, ptr, str(tmp_path / "out"))
+    assert open(tmp_path / "out" / "events-00000001-00000034.jsonl").read() == '{"seq":1}\n' * 34
