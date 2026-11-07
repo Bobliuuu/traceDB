@@ -1,0 +1,17 @@
+RUN s3://<bucket>/<bench-prefix>/ files=27646 raw=670MiB (client = laptop, not in-region)
+COND create-only PUT: ok (2nd refused)
+COND HEAD create ok
+COND CAS stale-etag refused: ok
+INGEST secs=16.2 packs=7 wire=199MiB (12.3 MiB/s upload incl. hashing/compress)
+COLD_SYNC entries=27646 secs=0.88
+HEAD_GET ms p50=69 max=75  (= warm sync cost when nothing changed)
+PULL 1 small file: files=1 raw=0.0MiB wire=0.0MiB reqs=1 (plan said wire=0.0MiB reqs=1) ms=170 (0.0 MiB/s)
+PULL 10 small: files=10 raw=0.2MiB wire=0.0MiB reqs=10 (plan said wire=0.0MiB reqs=10) ms=343 (0.5 MiB/s)
+PULL 100 small: files=100 raw=0.8MiB wire=2.7MiB reqs=79 (plan said wire=2.7MiB reqs=79) ms=766 (1.0 MiB/s)
+PULL 1000 small: files=1000 raw=7.7MiB wire=49.6MiB reqs=162 (plan said wire=49.6MiB reqs=162) ms=1399 (5.5 MiB/s)
+PULL 20 mid(64K-1M): files=20 raw=3.5MiB wire=1.0MiB reqs=19 (plan said wire=1.0MiB reqs=19) ms=146 (24.1 MiB/s)
+PULL 5 big(>2M): files=5 raw=16.1MiB wire=2.3MiB reqs=4 (plan said wire=2.3MiB reqs=4) ms=108 (149.5 MiB/s)
+RANGE 4KiB from 4.8MiB file (cold, 1 block<=1MiB wire): ms p50=69 max=74
+CONCURRENT 6 writers x3 puts: secs=11.3 entries=18/18 errors=[]
+VERIFY {'entries': 27664, 'packs': 25, 'missing_packs': [], 'short_packs': [], 'bad_content': [], 'ok': True}
+CLEANUP deleted=46 remaining=0
