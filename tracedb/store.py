@@ -19,7 +19,7 @@ from . import codec as C
 PACK_TARGET = 32 << 20
 SEG_COMPACT_AT = 64
 DEFAULT_BUDGET = int(os.environ.get("TRACEDB_MAX_BYTES", 8 << 20))
-COALESCE_GAP = 256 << 10
+COALESCE_GAP = int(os.environ.get("TRACEDB_GAP", 64 << 10))
 
 
 class BudgetExceeded(Exception):
@@ -63,7 +63,7 @@ def _sha(b: bytes) -> str:
 
 class Store:
     def __init__(self, backend: Backend, cache_dir: Optional[str] = None, name: str = "default",
-                 cache_bytes: int = 2 << 30, workers: int = 16):
+                 cache_bytes: int = 2 << 30, workers: int = 64):
         self.b = backend
         self.name = name
         self.workers = workers
@@ -78,6 +78,7 @@ class Store:
         self.db.execute("PRAGMA mmap_size=268435456")
         self._pool = ThreadPoolExecutor(workers)
         self._head_etag: Optional[str] = None
+        self._warmed = False
         self._lock = threading.RLock()
         self.stats = {"requests": 0, "bytes": 0, "cache_hits": 0}
 
@@ -87,8 +88,19 @@ class Store:
         self._head_etag = etag
         return json.loads(raw)["segments"] if raw else []
 
+    def sync_if_stale(self, ttl: Optional[float] = None) -> Optional[dict]:
+        """Skip the ~70 ms HEAD round trip if we synced within ttl seconds (env TRACEDB_SYNC_TTL, default 0 = always)."""
+        ttl = float(os.environ.get("TRACEDB_SYNC_TTL", 0)) if ttl is None else ttl
+        if ttl > 0 and time.time() - getattr(self, "_last_sync", 0) < ttl:
+            return None
+        return self.sync()
+
     def sync(self) -> dict:
         """Pull only segments we do not have. One HEAD GET when nothing changed."""
+        self._last_sync = time.time()
+        if not self._warmed:  # TLS handshakes in parallel, once, so first reads do not pay them serially
+            self._warmed = True
+            self._pool.submit(self.b.warm, self.workers)
         with self._lock:
             ids = self._segment_ids()
             have = {r[0] for r in self.db.execute("SELECT id FROM segs")}

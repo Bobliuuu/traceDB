@@ -30,8 +30,16 @@ So every performance claim here must be measured by `bench/` on real data, and S
 27,646 files / 670 MiB -> 7 packs / 199 MiB in 6.6 s. Cold catalog rebuild 0.30 s; no-change sync 0.23 ms; locate p50 7 us, p99 14 us;
 prefix ls (762 hits) 1.5 ms; 1000 small files cold-cache pull 72 ms. **These exclude network.** S3 latency is unmeasured so far.
 
+## Measured on real S3 (us-east-1, from a laptop, so RTT ~70 ms; `bench/results/s3-*.txt`)
+Conditional create-only PUT and HEAD CAS behave (stale etag refused); 6 concurrent writers lost nothing; verify ok.
+Ingest 199 MiB: 16 s. Cold catalog sync 0.9 s (2 MB segment, network-bound); no-change sync = one HEAD GET ~70 ms (`TRACEDB_SYNC_TTL` skips it).
+Whole-directory pull (what ontolagni points at): **1 request**, 70-370 ms for 0.1-14 MiB raw.
+Random small files: tuned by sweep (workers x merge gap). 1000 random small files: 1399 ms / 6.5x amplification (16 workers, 256K gap)
+-> **774 ms / 1.8x** (64 workers, 64K gap, now the defaults). 100 random: 334 ms. Single file after pre-warm: 68 ms (one RTT).
+Pre-warming the connection pool at first sync removed ~100 ms of serial TLS handshakes from the first read.
+
 ## Known gaps / next
-- Real-S3 benchmark (needs a bucket + OK to spend): ranged-GET concurrency, HEAD/segment GET latency, conditional-write behaviour.
+- Benchmark from inside AWS (same region): laptop RTT dominates the numbers above.
 - Appending to a growing jsonl re-stores the whole file (dedup is whole-file sha). Tail-append segments would fix it.
 - GC of orphaned packs/segments, cache eviction (cache dir is unbounded today).
 - Path overwrite = latest segment wins; no history API yet.

@@ -1,0 +1,24 @@
+RUN files=27646 (client = laptop, not in-region)
+COLD_SYNC secs=0.91
+  gap=  16K 1 file                             files=   1 raw=   0.0MiB wire=   0.0MiB amp= 0.3x reqs=  1 ms=   193
+  gap=  16K 10 random small                    files=  10 raw=   0.0MiB wire=   0.0MiB amp= 0.4x reqs= 10 ms=   248
+  gap=  16K 1000 random small                  files=1000 raw=   7.5MiB wire=   4.1MiB amp= 0.6x reqs=720 ms=  3324
+  gap=  16K dir experiments/rsi/tests          files= 564 raw=  14.6MiB wire=   3.4MiB amp= 0.2x reqs=  1 ms=   368
+  gap=  16K dir logs/gemma-4-31b-g7e/antares   files= 553 raw=   2.3MiB wire=   0.5MiB amp= 0.2x reqs=  1 ms=    81
+  gap=  16K dir nts/tiramisu-20261019/campaign files= 192 raw=   0.3MiB wire=   0.1MiB amp= 0.5x reqs=  1 ms=    76
+  gap=  16K dir riments/qwen-g7e-20261019/gemm files= 465 raw=   5.0MiB wire=   1.6MiB amp= 0.3x reqs=  1 ms=   116
+  gap=  64K 1 file                             files=   1 raw=   0.0MiB wire=   0.0MiB amp= 0.3x reqs=  1 ms=    68
+  gap=  64K 10 random small                    files=  10 raw=   0.1MiB wire=   0.0MiB amp= 0.2x reqs= 10 ms=    85
+  gap=  64K 1000 random small                  files=1000 raw=   8.1MiB wire=  13.6MiB amp= 1.7x reqs=447 ms=  1992
+  gap=  64K dir experiments/rsi/tests          files= 564 raw=  14.6MiB wire=   3.4MiB amp= 0.2x reqs=  1 ms=   173
+  gap=  64K dir logs/gemma-4-31b-g7e/antares   files= 553 raw=   2.3MiB wire=   0.5MiB amp= 0.2x reqs=  1 ms=    84
+  gap=  64K dir nts/tiramisu-20261019/campaign files= 192 raw=   0.3MiB wire=   0.1MiB amp= 0.5x reqs=  1 ms=    70
+  gap=  64K dir riments/qwen-g7e-20261019/gemm files= 465 raw=   5.0MiB wire=   1.6MiB amp= 0.3x reqs=  1 ms=   109
+  gap= 256K 1 file                             files=   1 raw=   0.0MiB wire=   0.0MiB amp= 0.4x reqs=  1 ms=    68
+  gap= 256K 10 random small                    files=  10 raw=   0.0MiB wire=   0.1MiB amp= 3.6x reqs=  9 ms=    73
+  gap= 256K 1000 random small                  files=1000 raw=   7.9MiB wire=  52.5MiB amp= 6.7x reqs=151 ms=  1283
+  gap= 256K dir experiments/rsi/tests          files= 564 raw=  14.6MiB wire=   3.4MiB amp= 0.2x reqs=  1 ms=   173
+  gap= 256K dir logs/gemma-4-31b-g7e/antares   files= 553 raw=   2.3MiB wire=   0.5MiB amp= 0.2x reqs=  1 ms=    82
+  gap= 256K dir nts/tiramisu-20261019/campaign files= 192 raw=   0.3MiB wire=   0.1MiB amp= 0.5x reqs=  1 ms=    71
+  gap= 256K dir riments/qwen-g7e-20261019/gemm files= 465 raw=   5.0MiB wire=   1.6MiB amp= 0.3x reqs=  1 ms=   109
+CLEANUP deleted=9 remaining=0

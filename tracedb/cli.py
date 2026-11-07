@@ -58,15 +58,15 @@ def main(argv=None):
                         yield (a.prefix + os.path.relpath(full, root), full, sniff(full, meta))
             t = time.time(); r = st.put(gen()); r["secs"] = round(time.time() - t, 2); out(r)
         elif a.cmd == "locate":
-            st.sync(); out(st.locate(a.path) or {"error": "not found"})
+            st.sync_if_stale(); out(st.locate(a.path) or {"error": "not found"})
         elif a.cmd == "ls":
-            st.sync(); out(st.ls(a.prefix, a.limit, a.glob))
+            st.sync_if_stale(); out(st.ls(a.prefix, a.limit, a.glob))
         elif a.cmd == "summary":
             st.sync(); out(st.summary(a.prefix, a.depth))
         elif a.cmd == "plan":
-            st.sync(); out(st.plan(a.paths).as_dict())
+            st.sync_if_stale(); out(st.plan(a.paths).as_dict())
         elif a.cmd == "get":
-            st.sync()
+            st.sync_if_stale()
             if a.head: d = st.head(a.path, a.head)
             elif a.tail: d = st.tail(a.path, a.tail)
             else: d = st.read(a.path, a.start, a.end, a.max_bytes)

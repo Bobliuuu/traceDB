@@ -1,0 +1,27 @@
+RUN files=27646 (client = laptop, not in-region)
+COLD_SYNC secs=0.88
+  gap=  16K w=16  100 random small             files= 100 raw=   0.9MiB wire=   0.3MiB amp= 0.3x reqs= 97 ms=   886
+  gap=  16K w=16  1000 random small            files=1000 raw=   7.5MiB wire=   4.2MiB amp= 0.6x reqs=697 ms=  3044
+  gap=  64K w=16  100 random small             files= 100 raw=   0.9MiB wire=   0.6MiB amp= 0.6x reqs= 91 ms=   468
+  gap=  64K w=16  1000 random small            files=1000 raw=   7.5MiB wire=  13.5MiB amp= 1.8x reqs=428 ms=  1933
+  gap= 256K w=16  100 random small             files= 100 raw=   0.9MiB wire=   2.7MiB amp= 3.0x reqs= 73 ms=   483
+  gap= 256K w=16  1000 random small            files=1000 raw=   7.5MiB wire=  48.5MiB amp= 6.5x reqs=154 ms=  1407
+  gap=1024K w=16  100 random small             files= 100 raw=   0.9MiB wire=  16.6MiB amp=18.6x reqs= 48 ms=   591
+  gap=1024K w=16  1000 random small            files=1000 raw=   7.5MiB wire= 104.6MiB amp=14.0x reqs= 34 ms=  2336
+  gap=  16K w=64  100 random small             files= 100 raw=   0.9MiB wire=   0.3MiB amp= 0.3x reqs= 97 ms=   374
+  gap=  16K w=64  1000 random small            files=1000 raw=   7.5MiB wire=   4.2MiB amp= 0.6x reqs=697 ms=  1457
+  gap=  64K w=64  100 random small             files= 100 raw=   0.9MiB wire=   0.6MiB amp= 0.6x reqs= 91 ms=   334
+  gap=  64K w=64  1000 random small            files=1000 raw=   7.5MiB wire=  13.5MiB amp= 1.8x reqs=428 ms=   774
+  gap= 256K w=64  100 random small             files= 100 raw=   0.9MiB wire=   2.7MiB amp= 3.0x reqs= 73 ms=   410
+  gap= 256K w=64  1000 random small            files=1000 raw=   7.5MiB wire=  48.5MiB amp= 6.5x reqs=154 ms=  5223
+  gap=1024K w=64  100 random small             files= 100 raw=   0.9MiB wire=  16.6MiB amp=18.6x reqs= 48 ms=   812
+  gap=1024K w=64  1000 random small            files=1000 raw=   7.5MiB wire= 104.6MiB amp=14.0x reqs= 34 ms=  6609
+  gap=  16K w=128 100 random small             files= 100 raw=   0.9MiB wire=   0.3MiB amp= 0.3x reqs= 97 ms=   722
+  gap=  16K w=128 1000 random small            files=1000 raw=   7.5MiB wire=   4.2MiB amp= 0.6x reqs=697 ms=  1318
+  gap=  64K w=128 100 random small             files= 100 raw=   0.9MiB wire=   0.6MiB amp= 0.6x reqs= 91 ms=   431
+  gap=  64K w=128 1000 random small            files=1000 raw=   7.5MiB wire=  13.5MiB amp= 1.8x reqs=428 ms=  1004
+  gap= 256K w=128 100 random small             files= 100 raw=   0.9MiB wire=   2.7MiB amp= 3.0x reqs= 73 ms=   491
+  gap= 256K w=128 1000 random small            files=1000 raw=   7.5MiB wire=  48.5MiB amp= 6.5x reqs=154 ms=  1000
+  gap=1024K w=128 100 random small             files= 100 raw=   0.9MiB wire=  16.6MiB amp=18.6x reqs= 48 ms=  1906
+  gap=1024K w=128 1000 random small            files=1000 raw=   7.5MiB wire= 104.6MiB amp=14.0x reqs= 34 ms=  7805
+CLEANUP deleted=9 remaining=0

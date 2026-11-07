@@ -18,6 +18,8 @@ class Backend:
     def get_head(self) -> tuple[Optional[bytes], Optional[str]]: ...
     def cas_head(self, data: bytes, etag: Optional[str]) -> str: ...
     def list(self, prefix: str) -> Iterable[tuple[str, int]]: ...
+    def warm(self, n: int) -> None:
+        """Open n connections ahead of time (no-op for local)."""
 
 
 class LocalBackend(Backend):
@@ -155,6 +157,11 @@ class S3Backend(Backend):
             if e.response["Error"]["Code"] in ("PreconditionFailed", "412", "ConditionalRequestConflict"):
                 raise CASConflict()
             raise
+
+    def warm(self, n):
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(n) as ex:
+            list(ex.map(lambda _: self.c.head_bucket(Bucket=self.bucket), range(n)))
 
     def list(self, prefix):
         pg = self.c.get_paginator("list_objects_v2")
