@@ -35,6 +35,10 @@ class NotFound(KeyError):
     pass
 
 
+class CorruptBlock(IOError):
+    pass
+
+
 @dataclass
 class Plan:
     paths: int = 0
@@ -237,20 +241,27 @@ class Store:
                 pass  # someone committed meanwhile; a later put will compact
         return {"added": len(rows), "packs": len(packs), "bytes": wire, "segment": sid}
 
-    def compact(self) -> dict:
+    def compact(self, retries: int = 20) -> dict:
         """Merge all segments into one. Old segments stay (orphans) until GC; HEAD flip is atomic.
         The CAS uses the etag seen at the sync that built the snapshot, so a segment committed meanwhile
-        makes this raise CASConflict instead of silently dropping it."""
-        with self._lock:
-            self.sync()
-            etag = self._head_etag
-            rows = []
-            for r in self.db.execute("SELECT path,sha,size,meta,exts FROM entries ORDER BY path"):
-                rows.append({"p": r[0], "h": r[1], "n": r[2], "m": json.loads(r[3]), "e": json.loads(r[4])})
-        seg = zlib.compress("\n".join(json.dumps(self._wire_row(r), separators=(",", ":")) for r in rows).encode(), 1)
-        sid = _sha(seg)
-        self.b.put_if_absent(f"segments/{sid}.seg", seg)
-        self.b.cas_head(json.dumps({"v": 1, "segments": [sid], "ts": time.time()}).encode(), etag)
+        makes the CAS fail and we re-merge, instead of silently dropping that segment."""
+        for _ in range(retries):
+            with self._lock:
+                self.sync()
+                etag = self._head_etag
+                rows = []
+                for r in self.db.execute("SELECT path,sha,size,meta,exts FROM entries ORDER BY path"):
+                    rows.append({"p": r[0], "h": r[1], "n": r[2], "m": json.loads(r[3]), "e": json.loads(r[4])})
+            seg = zlib.compress("\n".join(json.dumps(self._wire_row(r), separators=(",", ":")) for r in rows).encode(), 1)
+            sid = _sha(seg)
+            self.b.put_if_absent(f"segments/{sid}.seg", seg)
+            try:
+                self.b.cas_head(json.dumps({"v": 1, "segments": [sid], "ts": time.time()}).encode(), etag)
+                break
+            except CASConflict:
+                time.sleep(0.01)
+        else:
+            raise RuntimeError("HEAD CAS kept conflicting")
         self.sync()
         return {"entries": len(rows), "segment": sid}
 
@@ -467,7 +478,17 @@ class Store:
             for pk, off, cl, xi, bi in bl:
                 x = e["exts"][xi]
                 cdc = x["x"].split("|") if "|" in x["x"] else [x["x"]] * len(x["b"])
-                raw[(xi, bi)] = C.decompress(cdc[bi], cut(pk, off, off + cl))
+                try:
+                    blk = C.decompress(cdc[bi], cut(pk, off, off + cl))
+                    want = min(C.BLOCK, x["r"] - bi * C.BLOCK)
+                    if len(blk) != want:
+                        raise CorruptBlock(f"block {bi} of {e['path']}: {len(blk)} bytes, expected {want}")
+                except Exception as ex:
+                    self._evict(pk, off, off + cl)
+                    if isinstance(ex, CorruptBlock):
+                        raise
+                    raise CorruptBlock(f"block {bi} of {e['path']} does not decompress: {ex}") from ex
+                raw[(xi, bi)] = blk
             buf, rb = bytearray(), 0
             for xi, x in enumerate(e["exts"]):
                 s, t = max(start, rb) - rb, min(end, rb + x["r"]) - rb
@@ -477,8 +498,25 @@ class Store:
                 piece = b"".join(raw[(xi, bi)] for bi in range(s // C.BLOCK, (t - 1) // C.BLOCK + 1))
                 base = (s // C.BLOCK) * C.BLOCK
                 buf += piece[s - base:t - base]
-            out[(e["path"], start, end)] = bytes(buf)
+            data = bytes(buf)
+            if start == 0 and end == e["size"] and _sha(data) != e["sha"]:  # whole file: content hash is cheap
+                for pk, off, cl, _, _ in bl:
+                    self._evict(pk, off, off + cl)
+                raise CorruptBlock(f"{e['path']}: content hash mismatch")
+            out[(e["path"], start, end)] = data
         return out
+
+    def _evict(self, pk, a, b):
+        """Drop cached ranges overlapping a bad block so a repaired pack is re-fetched."""
+        d = os.path.join(self.dir, "blocks", pk[:2])
+        try:
+            for f in os.listdir(d):
+                if f.startswith(pk + ".") and f.endswith(tuple("0123456789")):
+                    x, y = f[len(pk) + 1:].split("-")
+                    if int(x) < b and a < int(y):
+                        os.unlink(os.path.join(d, f))
+        except (OSError, ValueError):
+            pass
 
     def read(self, path: str, start: int = 0, end: Optional[int] = None, max_bytes: Optional[int] = None) -> bytes:
         r = self.read_many([(path, start, end)], max_bytes)
@@ -508,7 +546,10 @@ class Store:
         bad = []
         if deep:
             for (p, h) in self.db.execute("SELECT path,sha FROM entries"):
-                if _sha(self.read(p, max_bytes=-1)) != h:
+                try:
+                    if _sha(self.read(p, max_bytes=-1)) != h:
+                        bad.append(p)
+                except (IOError, ValueError, RuntimeError):
                     bad.append(p)
         return {"entries": self.count(), "packs": len(packs), "missing_packs": missing,
                 "short_packs": short, "bad_content": bad, "ok": not (missing or short or bad)}
