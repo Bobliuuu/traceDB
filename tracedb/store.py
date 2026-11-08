@@ -66,6 +66,39 @@ def _sha(b: bytes) -> str:
     return hashlib.sha256(b).hexdigest()
 
 
+class _Rows(list):
+    def fetchone(self):
+        return self[0] if self else None
+
+    def fetchall(self):
+        return list(self)
+
+
+class _DB:
+    """sqlite3 connections abort the process when queried from several threads at once (found by the parallel
+    verify). Serialize every call behind one lock and fetch eagerly so no cursor outlives the lock."""
+
+    def __init__(self, conn):
+        self._c, self._l = conn, threading.RLock()
+
+    def execute(self, sql, args=()):
+        with self._l:
+            cur = self._c.execute(sql, args)
+            return _Rows(cur.fetchall() if cur.description else [])
+
+    def executemany(self, sql, seq):
+        with self._l:
+            self._c.executemany(sql, seq)
+
+    def executescript(self, sql):
+        with self._l:
+            self._c.executescript(sql)
+
+    def commit(self):
+        with self._l:
+            self._c.commit()
+
+
 class Store:
     def __init__(self, backend: Backend, cache_dir: Optional[str] = None, name: str = "default",
                  cache_bytes: int = 2 << 30, workers: int = 64):
@@ -78,7 +111,7 @@ class Store:
         self.cache_bytes = cache_bytes
         self._csize: Optional[int] = None  # running cache size; lazily initialised, persisted lazily
         self._cdirty = 0
-        self.db = sqlite3.connect(os.path.join(self.dir, "catalog.sqlite"), check_same_thread=False)
+        self.db = _DB(sqlite3.connect(os.path.join(self.dir, "catalog.sqlite"), check_same_thread=False))
         cols = [r[1] for r in self.db.execute("PRAGMA table_info(entries)")]
         if cols and "exts" not in cols:  # catalog cache from before multi-extent: rebuildable from segments
             self.db.executescript("DROP TABLE entries; DROP TABLE segs;")
@@ -543,16 +576,29 @@ class Store:
                 missing.append(pk)
             elif sz < need:
                 short.append(pk)
-        bad = []
+        bad, errors = [], []
         if deep:
-            for (p, h) in self.db.execute("SELECT path,sha FROM entries"):
-                try:
-                    if _sha(self.read(p, max_bytes=-1)) != h:
+            rows = list(self.db.execute("SELECT path,sha FROM entries"))
+
+            def check(row):
+                p, h = row
+                for attempt in range(4):
+                    try:
+                        return ("ok" if _sha(self.read(p, max_bytes=-1)) == h else "bad", p, None)
+                    except CorruptBlock as ex:  # real integrity failure: never retried away
+                        return ("bad", p, str(ex))
+                    except Exception as ex:  # network/transient: retry, then report as an ERROR, not as corruption
+                        err = f"{type(ex).__name__}: {ex}"
+                        time.sleep(0.2 * (attempt + 1))
+                return ("error", p, err)
+            with ThreadPoolExecutor(16) as ex:  # own pool: read_many uses self._pool, nesting would deadlock
+                for kind, p, why in ex.map(check, rows):
+                    if kind == "bad":
                         bad.append(p)
-                except (IOError, ValueError, RuntimeError):
-                    bad.append(p)
-        return {"entries": self.count(), "packs": len(packs), "missing_packs": missing,
-                "short_packs": short, "bad_content": bad, "ok": not (missing or short or bad)}
+                    elif kind == "error":
+                        errors.append({"path": p, "error": why})
+        return {"entries": self.count(), "packs": len(packs), "missing_packs": missing, "short_packs": short,
+                "bad_content": bad, "errors": errors, "ok": not (missing or short or bad or errors)}
 
     def gc(self, grace_seconds: float = 3600, dry_run: bool = True) -> dict:
         """Delete unreferenced packs/segments older than grace. See tracedb/gc.py."""

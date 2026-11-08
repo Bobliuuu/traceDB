@@ -1,27 +1,24 @@
 RUN s3://<bucket>/<bench-prefix>/ files=27646 (client = laptop, not in-region)
 COND create-only PUT ok
 COND stale CAS refused ok
-INGEST secs=36.1 packs=7 wire=199MiB
-COLD_SYNC entries=27646 secs=1.88
-WARM_SYNC ms=61
-APPEND base put 20.5MiB secs=0.92
-APPEND +107KiB: packs grew 12KiB secs=0.65
-APPEND +107KiB: packs grew 12KiB secs=0.64
-APPEND +107KiB: packs grew 12KiB secs=0.65
-APPEND cold tail-4KiB read ms=78 correct=True
-APPEND whole read 20.9MiB ms=343 correct=True (sha-checked)
+INGEST secs=167.0 packs=7 wire=199MiB
+COLD_SYNC entries=27646 secs=7.76
+WARM_SYNC ms=89
+APPEND base put 20.5MiB secs=1.61
+APPEND +107KiB: packs grew 12KiB secs=0.71
+APPEND +107KiB: packs grew 12KiB secs=0.76
+APPEND +107KiB: packs grew 12KiB secs=0.80
+APPEND cold tail-4KiB read ms=160 correct=True
+APPEND whole read 20.9MiB ms=692 correct=True (sha-checked)
 INTEGRITY corrupted pack read raises CorruptBlock ok
 INTEGRITY deep verify flags it: True
 TOUCH real S3: mtime advanced=True object_intact=True
-CLEANUP deleted=23 remaining=0
-Traceback (most recent call last):
-  File "/Users/jhome/tracedb-work/traceDB/bench/bench_s3_v2.py", line 56, in <module>
-    r = st.gc(grace_seconds=3600, dry_run=False); P("GC grace=3600 apply (orphans are fresh):", {k: (v if not isinstance(v, list) else len(v)) for k, v in r.items()})
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/jhome/tracedb-work/traceDB/tracedb/store.py", line 560, in gc
-    return gc(self, grace_seconds, dry_run)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/jhome/tracedb-work/traceDB/tracedb/gc.py", line 31, in gc
-    live.add(f"packs/{json.loads(line)['k']}.pack")
-                      ~~~~~~~~~~~~~~~~^^^^^
-KeyError: 'k'
+GC grace=3600 apply (orphans are fresh): {'dry_run': False, 'grace_seconds': 3600, 'live': 16, 'skipped_young': 2, 'orphans': 0, 'orphan_bytes': 0, 'deleted': 0, 'orphan_keys': 0}
+GC grace=0 dry-run: {'dry_run': True, 'grace_seconds': 0, 'live': 16, 'skipped_young': 0, 'orphans': 2, 'orphan_bytes': 404, 'deleted': 0, 'orphan_keys': 2}
+GC grace=0 apply: {'dry_run': False, 'grace_seconds': 0, 'live': 16, 'skipped_young': 0, 'orphans': 2, 'orphan_bytes': 404, 'deleted': 2, 'orphan_keys': 2}
+GC orphan gone: True | live data intact: True
+VERIFY deep (all 27647 entries re-hashed from S3) secs=2471.1 ok=False
+CONCURRENT 6x3 puts secs=54.0 entries=18/18 errors=[]
+COMPACT 27665 secs=30.2
+VERIFY after compact ok: True
+CLEANUP deleted=58 remaining=0

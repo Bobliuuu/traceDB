@@ -215,3 +215,48 @@ def test_corrupt_pack_detected(tmp_path, compressible):
     with pytest.raises(CorruptBlock):
         r.read("f")
     assert r.read("g") is not None
+
+
+def test_deep_verify_separates_transient_errors_from_corruption(tmp_path):
+    """Regression (S3 run): a transient network error must be retried / reported as an error, never as bad_content."""
+    from tracedb import Store, LocalBackend
+    be = LocalBackend(tmp_path / "b"); st = Store(be, cache_dir=str(tmp_path / "c"), name="x")
+    st.put([(f"f{i}", os.urandom(3000), None) for i in range(5)])
+    real = be.get; calls = {"n": 0}
+
+    def flaky(key, start=None, end=None):
+        if key.startswith("packs/"):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise ConnectionResetError("blip")
+        return real(key, start, end)
+    be.get = flaky
+    shutil_rm = __import__("shutil").rmtree; shutil_rm(os.path.join(st.dir, "blocks"), ignore_errors=True); os.makedirs(os.path.join(st.dir, "blocks"))
+    r = st.verify(deep=True)
+    assert r["ok"] and r["bad_content"] == [] and r["errors"] == []  # one blip retried away
+
+    def dead(key, start=None, end=None):
+        if key.startswith("packs/"):
+            raise ConnectionResetError("down")
+        return real(key, start, end)
+    be.get = dead; shutil_rm(os.path.join(st.dir, "blocks"), ignore_errors=True); os.makedirs(os.path.join(st.dir, "blocks"))
+    r = st.verify(deep=True)
+    assert not r["ok"] and r["bad_content"] == [] and len(r["errors"]) == 5  # reported as errors, not corruption
+
+
+def test_one_store_shared_by_many_threads(tmp_path):
+    """Regression: concurrent reads/lookups from many threads on ONE Store used to abort the process (sqlite)."""
+    from concurrent.futures import ThreadPoolExecutor
+    be = LocalBackend(tmp_path / "b"); st = Store(be, cache_dir=str(tmp_path / "c"), name="x")
+    data = {f"d{i % 7}/f{i}": os.urandom(2000 + i) for i in range(300)}
+    st.put([(p, b, None) for p, b in data.items()])
+    paths = list(data)
+
+    def work(i):
+        p = paths[(i * 37) % len(paths)]
+        assert st.locate(p)["size"] == len(data[p])
+        assert st.read(p) == data[p]
+        assert st.ls("d1/", limit=5)
+        return True
+    with ThreadPoolExecutor(32) as ex:
+        assert all(ex.map(work, range(2000)))
