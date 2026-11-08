@@ -28,10 +28,12 @@ def gc(store, grace_seconds: float = 3600, dry_run: bool = True) -> dict:
     for s in head_segs:
         blob = b.get(f"segments/{s}.seg")
         for line in zlib.decompress(blob).splitlines():
-            live.add(f"packs/{json.loads(line)['k']}.pack")
+            for x in store._exts_of(json.loads(line)):  # flat rows AND multi-extent (appended) rows
+                live.add(f"packs/{x['k']}.pack")
     with store._lock:
         store.sync()
-        live.update(f"packs/{r[0]}.pack" for r in store.db.execute("SELECT DISTINCT pack FROM entries"))
+        for (ex,) in store.db.execute("SELECT exts FROM entries"):  # every extent, not just the first
+            live.update(f"packs/{x['k']}.pack" for x in json.loads(ex))
     orphans, young, live_n, freed = [], 0, 0, 0
     for key, size, mtime in listed:
         if key in live:

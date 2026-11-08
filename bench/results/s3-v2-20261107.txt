@@ -1,0 +1,27 @@
+RUN s3://<bucket>/<bench-prefix>/ files=27646 (client = laptop, not in-region)
+COND create-only PUT ok
+COND stale CAS refused ok
+INGEST secs=36.1 packs=7 wire=199MiB
+COLD_SYNC entries=27646 secs=1.88
+WARM_SYNC ms=61
+APPEND base put 20.5MiB secs=0.92
+APPEND +107KiB: packs grew 12KiB secs=0.65
+APPEND +107KiB: packs grew 12KiB secs=0.64
+APPEND +107KiB: packs grew 12KiB secs=0.65
+APPEND cold tail-4KiB read ms=78 correct=True
+APPEND whole read 20.9MiB ms=343 correct=True (sha-checked)
+INTEGRITY corrupted pack read raises CorruptBlock ok
+INTEGRITY deep verify flags it: True
+TOUCH real S3: mtime advanced=True object_intact=True
+CLEANUP deleted=23 remaining=0
+Traceback (most recent call last):
+  File "/Users/jhome/tracedb-work/traceDB/bench/bench_s3_v2.py", line 56, in <module>
+    r = st.gc(grace_seconds=3600, dry_run=False); P("GC grace=3600 apply (orphans are fresh):", {k: (v if not isinstance(v, list) else len(v)) for k, v in r.items()})
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jhome/tracedb-work/traceDB/tracedb/store.py", line 560, in gc
+    return gc(self, grace_seconds, dry_run)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jhome/tracedb-work/traceDB/tracedb/gc.py", line 31, in gc
+    live.add(f"packs/{json.loads(line)['k']}.pack")
+                      ~~~~~~~~~~~~~~~~^^^^^
+KeyError: 'k'

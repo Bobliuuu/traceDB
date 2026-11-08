@@ -127,3 +127,20 @@ def test_reupload_of_old_orphan_pack_is_protected_from_gc(tmp_path):
     assert time.time() - os.path.getmtime(st.b._p(pkey)) < 60
     st2.gc(grace_seconds=3600, dry_run=False)
     assert st2.read("a") == data and st2.verify(deep=True)["ok"]
+
+
+def test_gc_keeps_every_extent_pack_of_appended_files(tmp_path):
+    """Regression (found on real S3): gc must treat packs of ALL extents as live. grace=0 so only liveness protects."""
+    st = mkstore(tmp_path)
+    cur = os.urandom(300_000)
+    st.put([("s.jsonl", cur, None)])
+    for _ in range(3):
+        cur += os.urandom(50_000)
+        st.put([("s.jsonl", cur, None)])
+    assert len(st.locate("s.jsonl")["exts"]) == 4
+    before = keys(st, "packs/")
+    r = st.gc(grace_seconds=0, dry_run=False)
+    assert keys(st, "packs/") == before, r
+    st2 = mkstore(tmp_path / "other")  # (fresh cache) reads must still work
+    st2.b = st.b; st2.sync()
+    assert st2.read("s.jsonl", max_bytes=-1) == cur and st.verify(deep=True)["ok"]
