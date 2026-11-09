@@ -10,6 +10,7 @@ import json, os, re, sys, time
 sys.path.insert(0, os.path.expanduser("~/tracedb-work/traceDB"))
 from tracedb.store import Store  # noqa
 from tracedb.cli import sniff, open_store  # noqa
+from tracedb.policy import from_env as _policy  # noqa
 
 SKIP_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv", ".mypy_cache", ".pytest_cache", ".cache", ".next",
              "target", ".gradle", "site-packages", ".tox", "dist-packages", ".ruff_cache", "Pods", ".terraform"}
@@ -38,6 +39,7 @@ SECRETS = [
     (re.compile(rb"(?i)((?:api[_-]?key|apikey|secret|passwd|password|token)[\"']?\s*[:=]\s*[\"']?)[A-Za-z0-9_\-./+=]{24,}"), rb"\1[REDACTED:CRED]"),
 ]
 BATCH = 256 << 20
+POLICY = _policy()  # the store's POLICY.json (tracedb/policy.py): what it refuses
 
 
 def redact(data: bytes):
@@ -86,8 +88,10 @@ def main():
             full = os.path.join(dp, f)
             rel = os.path.relpath(full, base)
             ext = os.path.splitext(f)[1].lower()
-            reason = None
-            if os.path.islink(full):
+            reason = "policy-excluded" if POLICY.excluded(prefix + rel) else None
+            if reason:
+                pass
+            elif os.path.islink(full):
                 reason = "symlink"
             elif f in SKIP_NAMES or SKIP_PAT.search(full) and not f.endswith(".pub"):
                 reason = "secret-name"

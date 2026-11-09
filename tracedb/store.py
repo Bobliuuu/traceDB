@@ -99,6 +99,9 @@ class _DB:
             self._c.commit()
 
 
+from .policy import Excluded, POLICY_KEY, Policy, of_backend  # noqa: E402
+
+
 class Store:
     def __init__(self, backend: Backend, cache_dir: Optional[str] = None, name: str = "default",
                  cache_bytes: int = 2 << 30, workers: int = 64):
@@ -124,6 +127,21 @@ class Store:
         self._warmed = False
         self._lock = threading.RLock()
         self.stats = {"requests": 0, "bytes": 0, "cache_hits": 0}
+
+    # ---------------------------------------------------------------- policy
+    @property
+    def policy(self) -> Policy:
+        """This store's POLICY.json (read once per Store; set_policy replaces it)."""
+        if getattr(self, "_policy", None) is None:
+            self._policy = of_backend(self.b)
+        return self._policy
+
+    def set_policy(self, policy: Policy) -> None:
+        if self.b.size(POLICY_KEY) is not None:          # backends write create-only: replace = delete + create
+            self.b.delete(POLICY_KEY)
+        if not self.b.put_if_absent(POLICY_KEY, policy.dumps()):
+            raise RuntimeError(f"{POLICY_KEY} was written by someone else meanwhile; read it and try again")
+        self._policy = policy
 
     # ------------------------------------------------------------------ sync
     def _segment_ids(self) -> list[str]:
@@ -198,6 +216,8 @@ class Store:
         known = {}
         todo = []
         for path, data, meta in items:
+            if self.policy.excluded(path):
+                raise Excluded(f"{path}: refused by this store's {POLICY_KEY}")
             if isinstance(data, str):
                 with open(data, "rb") as f:
                     data = f.read()
@@ -212,6 +232,33 @@ class Store:
             todo.append((path, data, h, meta, base))
         if not todo:
             return {"added": 0, "packs": 0, "bytes": 0}
+        rows, packs, wire = self._write_packs(todo)
+        seg = zlib.compress("\n".join(json.dumps(self._wire_row(r), separators=(",", ":")) for r in rows).encode(), 1)
+        sid = _sha(seg)
+        if not self.b.put_if_absent(f"segments/{sid}.seg", seg):
+            self.b.touch(f"segments/{sid}.seg")
+        for _ in range(retries):
+            raw, etag = self.b.get_head()
+            segs = json.loads(raw)["segments"] if raw else []
+            if sid not in segs:
+                segs.append(sid)
+            try:
+                self.b.cas_head(json.dumps({"v": 1, "segments": segs, "ts": time.time()}).encode(), etag)
+                break
+            except CASConflict:
+                time.sleep(0.01)
+        else:
+            raise RuntimeError("HEAD CAS kept conflicting")
+        self.sync()
+        if len(segs) >= SEG_COMPACT_AT:
+            try:
+                self.compact()
+            except CASConflict:
+                pass  # someone committed meanwhile; a later put will compact
+        return {"added": len(rows), "packs": len(packs), "bytes": wire, "segment": sid}
+
+    def _write_packs(self, todo):
+        """Encode (path, data, sha, meta, base) items into packs, upload them, return (rows, packs, wire bytes)."""
         todo.sort(key=lambda t: t[0])  # path order = locality (same dir adjacent in a pack)
         rows, packs, cur, cur_len, wire = [], [], [], 0, 0
         pack_rows: list[dict] = []
@@ -250,29 +297,60 @@ class Store:
                 self.b.touch(k)
         list(self._pool.map(up, packs))
         wire = sum(len(b) for _, b in packs)
-        seg = zlib.compress("\n".join(json.dumps(self._wire_row(r), separators=(",", ":")) for r in rows).encode(), 1)
-        sid = _sha(seg)
-        if not self.b.put_if_absent(f"segments/{sid}.seg", seg):
-            self.b.touch(f"segments/{sid}.seg")
+        return rows, packs, wire
+
+    def purge(self, prefixes: list[str], dry_run: bool = True, retries: int = 20, by_policy: bool = False) -> dict:
+        """Remove every entry under `prefixes` for good, as one compaction: HEAD becomes one segment without them, and
+        every pack they used is rewritten without their bytes (its other entries re-encoded into new packs), so after
+        `gc --apply` past the grace period nothing of them is left in the bucket. Blobs only they point to are deleted
+        too. A prefix ends with "/" (a subtree) or names one path exactly. dry_run reports and writes nothing."""
+        bad = [p for p in prefixes if not p or p.startswith("/")]
+        if bad:
+            raise ValueError(f"refusing prefixes {bad}: empty or absolute")
+        if not prefixes and not by_policy:
+            raise ValueError("nothing to purge: name prefixes, or by_policy=True for what POLICY.json excludes")
+        policy = self.policy if by_policy else Policy()
+        hit = lambda path: policy.excluded(path) or any(  # noqa: E731
+            path == p or (p.endswith("/") and path.startswith(p)) for p in prefixes)
         for _ in range(retries):
-            raw, etag = self.b.get_head()
-            segs = json.loads(raw)["segments"] if raw else []
-            if sid not in segs:
-                segs.append(sid)
+            with self._lock:
+                self.sync()
+                etag = self._head_etag
+                rows = [{"p": r[0], "h": r[1], "n": r[2], "m": json.loads(r[3]), "e": json.loads(r[4])}
+                        for r in self.db.execute("SELECT path,sha,size,meta,exts FROM entries ORDER BY path")]
+            doomed = [r for r in rows if hit(r["p"])]
+            live = [r for r in rows if not hit(r["p"])]
+            dirty = {x["k"] for r in doomed for x in r["e"]}
+            moved = [r for r in live if any(x["k"] in dirty for x in r["e"])]
+            live_blobs = {r["m"].get("blob") for r in live if r["m"].get("blob")}
+            dead_blobs = sorted({r["m"]["blob"] for r in doomed if r["m"].get("blob")} - live_blobs)
+            report = {"entries": len(rows), "purged": len(doomed), "purged_bytes": sum(r["n"] for r in doomed),
+                      "packs_freed": len(dirty), "moved": len(moved), "moved_bytes": sum(r["n"] for r in moved),
+                      "blobs_deleted": len(dead_blobs), "prefixes": prefixes, "by_policy": by_policy, "dry_run": dry_run}
+            if dry_run or not doomed:
+                return report
+            todo = []
+            for r in moved:
+                data = self.read(r["p"], max_bytes=1 << 40)
+                if _sha(data) != r["h"]:
+                    raise IOError(f"{r['p']}: content does not match its hash; nothing purged")
+                todo.append((r["p"], data, r["h"], r["m"], None))
+            new_rows, _, _ = self._write_packs(todo) if todo else ([], [], 0)
+            by_path = {r["p"]: r for r in new_rows}
+            out = [by_path.get(r["p"], r) for r in live]
+            seg = zlib.compress("\n".join(json.dumps(self._wire_row(r), separators=(",", ":")) for r in out).encode(), 1)
+            sid = _sha(seg)
+            self.b.put_if_absent(f"segments/{sid}.seg", seg)
             try:
-                self.b.cas_head(json.dumps({"v": 1, "segments": segs, "ts": time.time()}).encode(), etag)
-                break
+                self.b.cas_head(json.dumps({"v": 1, "segments": [sid], "ts": time.time()}).encode(), etag)
             except CASConflict:
                 time.sleep(0.01)
-        else:
-            raise RuntimeError("HEAD CAS kept conflicting")
-        self.sync()
-        if len(segs) >= SEG_COMPACT_AT:
-            try:
-                self.compact()
-            except CASConflict:
-                pass  # someone committed meanwhile; a later put will compact
-        return {"added": len(rows), "packs": len(packs), "bytes": wire, "segment": sid}
+                continue
+            for sha in dead_blobs:
+                self.b.delete(f"blobs/{sha}")
+            self.sync()
+            return {**report, "segment": sid, "next": "tracedb gc --apply after the grace period deletes the freed packs"}
+        raise RuntimeError("HEAD CAS kept conflicting")
 
     def compact(self, retries: int = 20) -> dict:
         """Merge all segments into one. Old segments stay (orphans) until GC; HEAD flip is atomic.

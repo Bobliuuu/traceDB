@@ -6,7 +6,9 @@ sys.path.insert(0, os.path.expanduser("~/tracedb-work")); sys.path.insert(0, os.
 import ingest as I
 from tracedb.search import SearchIndex
 from tracedb.store import open_store
+from tracedb.policy import from_env as _policy
 
+POLICY = _policy()  # the store's POLICY.json (tracedb/policy.py): what it refuses
 def main():
     a = sys.argv[1:]; up = "--no-upload" not in a; a = [x for x in a if x != "--no-upload"]
     out, specs = a[0], a[1:]
@@ -16,7 +18,7 @@ def main():
         base = src if os.path.isdir(src) else os.path.dirname(src)
         for dp, f in I.walk(src):
             full = os.path.join(dp, f); rel = os.path.relpath(full, base); ext = os.path.splitext(f)[1].lower()
-            if os.path.islink(full) or f in I.SKIP_NAMES or (I.SKIP_PAT.search(full) and not f.endswith(".pub")) or ext in I.SKIP_EXT:
+            if POLICY.excluded(prefix + rel) or os.path.islink(full) or f in I.SKIP_NAMES or (I.SKIP_PAT.search(full) and not f.endswith(".pub")) or ext in I.SKIP_EXT:
                 continue
             try:
                 sz = os.path.getsize(full)
