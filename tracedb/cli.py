@@ -36,6 +36,9 @@ def main(argv=None):
     p.add_argument("--head", type=int); p.add_argument("--tail", type=int)
     p = sp.add_parser("verify"); p.add_argument("--deep", action="store_true")
     sp.add_parser("compact")
+    p = sp.add_parser("purge", help="remove entries under prefixes for good (packs rewritten; then gc --apply)")
+    p.add_argument("prefix", nargs="*"); p.add_argument("--apply", action="store_true")
+    p.add_argument("--policy", action="store_true", help="also every path this store's POLICY.json excludes")
     p = sp.add_parser("gc"); p.add_argument("--apply", action="store_true"); p.add_argument("--grace", type=float, default=3600)
     p = sp.add_parser("export-catalog"); p.add_argument("--out", default="-")
     p = sp.add_parser("blob-put", help="upload a large local file as a content-addressed blob + pointer entry")
@@ -88,6 +91,8 @@ def main(argv=None):
             out(st.gc(a.grace, dry_run=not a.apply))
         elif a.cmd == "compact":
             out(st.compact())
+        elif a.cmd == "purge":
+            out(st.purge(a.prefix, dry_run=not a.apply, by_policy=a.policy))
         elif a.cmd == "blob-put":
             from .blob import put_blob
             st.sync(); out(put_blob(st, a.path, a.file, json.loads(a.meta)))
