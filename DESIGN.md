@@ -1,6 +1,6 @@
 # traceDB design
 
-Goal: RSI swarm gets data fast, never pulls more than it asked for, and the store always knows where everything is.
+Goal: agents get data fast, never pull more than they asked for, and the store always knows where everything is.
 
 ## Layout (any S3 bucket/prefix or local dir)
     packs/<sha256>.pack      immutable, ~32 MiB, 1 MiB independently-compressed blocks (zlib-1 / zstd if present / raw)
@@ -26,7 +26,7 @@ Dropped: sharded manifest/2PC, locks/merge/zones (we have one logical writer per
 Not trusted: most of all-git's latency tables (loopback/moto, single runs on loaded boxes; its SlowDown test contradicts itself).
 So every performance claim here must be measured by `bench/` on real data, and S3 numbers on real S3.
 
-## Measured (local backend, real inference-experiment data, M-series Mac; `bench/bench_real.py`)
+## Measured (local backend, real agent-trace and repo data, M-series Mac; `bench/bench_real.py`)
 27,646 files / 670 MiB -> 7 packs / 199 MiB in 6.6 s. Cold catalog rebuild 0.30 s; no-change sync 0.23 ms; locate p50 7 us, p99 14 us;
 prefix ls (762 hits) 1.5 ms; 1000 small files cold-cache pull 72 ms. **These exclude network.** S3 latency is unmeasured so far.
 

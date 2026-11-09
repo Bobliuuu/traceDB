@@ -1,6 +1,6 @@
 [project]
 name = "tracedb"
-version = "0.1.0"
+version = "0.2.0"
 description = "Fast, budgeted, content-addressed trace/data store over S3"
 requires-python = ">=3.10"
 dependencies = []

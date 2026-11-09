@@ -32,6 +32,10 @@ class Backend:
     def warm(self, n: int) -> None:
         """Open n connections ahead of time (no-op for local)."""
 
+    def put_file(self, key: str, path: str) -> bool:
+        """Create-only upload of a local file of any size (streamed, no whole-file RAM). False if key already exists."""
+        raise NotImplementedError
+
 
 class LocalBackend(Backend):
     """Directory-as-bucket. Used for tests, benchmarks and as a local mirror."""
@@ -119,6 +123,21 @@ class LocalBackend(Backend):
         except FileNotFoundError:
             pass
 
+    def put_file(self, key, path):
+        import shutil
+        p = self._p(key)
+        if os.path.exists(p):
+            return False
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=os.path.dirname(p), prefix=".tmp-"); os.close(fd)
+        shutil.copyfile(path, tmp)
+        try:
+            os.link(tmp, p); return True
+        except FileExistsError:
+            return False
+        finally:
+            os.unlink(tmp)
+
     def delete(self, key):
         if key == self.HEAD:
             raise ValueError("refusing to delete HEAD")
@@ -190,6 +209,14 @@ class S3Backend(Backend):
             if e.response["Error"]["Code"] in ("PreconditionFailed", "412", "ConditionalRequestConflict"):
                 raise CASConflict()
             raise
+
+    def put_file(self, key, path):
+        from boto3.s3.transfer import TransferConfig
+        if self.size(key) is not None:
+            return False
+        self.c.upload_file(path, self.bucket, self._k(key), Config=TransferConfig(
+            multipart_threshold=64 << 20, multipart_chunksize=64 << 20, max_concurrency=16))
+        return True
 
     def warm(self, n):
         from concurrent.futures import ThreadPoolExecutor

@@ -38,6 +38,12 @@ def main(argv=None):
     sp.add_parser("compact")
     p = sp.add_parser("gc"); p.add_argument("--apply", action="store_true"); p.add_argument("--grace", type=float, default=3600)
     p = sp.add_parser("export-catalog"); p.add_argument("--out", default="-")
+    p = sp.add_parser("blob-put", help="upload a large local file as a content-addressed blob + pointer entry")
+    p.add_argument("path"); p.add_argument("file"); p.add_argument("--meta", default="{}")
+    p = sp.add_parser("blob-get", help="ranged, budgeted read of a blob (default stdout)")
+    p.add_argument("path"); p.add_argument("--start", type=int, default=0); p.add_argument("--end", type=int)
+    p.add_argument("--max-bytes", type=int); p.add_argument("--out")
+    p = sp.add_parser("blob-info"); p.add_argument("path")
     p = sp.add_parser("search", help="full-text search over the store's FTS index (index/fts.sqlite)")
     p.add_argument("text", nargs="+"); p.add_argument("--prefix", default=""); p.add_argument("--limit", type=int, default=10)
     p.add_argument("--paths", action="store_true", help="search file paths only")
@@ -82,6 +88,17 @@ def main(argv=None):
             out(st.gc(a.grace, dry_run=not a.apply))
         elif a.cmd == "compact":
             out(st.compact())
+        elif a.cmd == "blob-put":
+            from .blob import put_blob
+            st.sync(); out(put_blob(st, a.path, a.file, json.loads(a.meta)))
+        elif a.cmd in ("blob-get", "blob-info"):
+            from .blob import get_blob, blob_info
+            st.sync_if_stale()
+            if a.cmd == "blob-info":
+                out(blob_info(st, a.path) or {"error": "not a blob"})
+            else:
+                d = get_blob(st, a.path, a.start, a.end, a.max_bytes)
+                (open(a.out, "wb") if a.out else sys.stdout.buffer).write(d)
         elif a.cmd == "search":
             from .search import SearchIndex
             st.sync_if_stale()
