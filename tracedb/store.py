@@ -158,7 +158,7 @@ class Store:
                     raise IOError(f"segment {i} corrupt")
                 rows = [json.loads(l) for l in zlib.decompress(blob).splitlines()]
                 self._apply(rows)
-                self.db.execute("INSERT INTO segs VALUES(?,?)", (i, ids.index(i)))
+                self.db.execute("INSERT OR REPLACE INTO segs VALUES(?,?)", (i, ids.index(i)))  # another process may have synced it
             self.db.commit()
             return {"segments": len(ids), "new": len(new), "entries": self.count()}
 
