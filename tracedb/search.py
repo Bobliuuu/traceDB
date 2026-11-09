@@ -171,6 +171,12 @@ class SearchIndex:
             "SELECT path, off, snippet(chunks, 0, '[', ']', ' … ', 24), bm25(chunks) AS s FROM chunks "
             "WHERE chunks MATCH ? " + ("AND path GLOB ? " if prefix else "") + "ORDER BY s LIMIT ?",
             (q, prefix + "*", limit * 3) if prefix else (q, limit * 3)).fetchall()
+        if not rows and q.count('"') > 2 and "OR" not in q:  # AND found nothing: fall back to any-term ranking (bm25 still favours more matches)
+            q = q.replace('" "', '" OR "')
+            rows = self.c.execute(
+                "SELECT path, off, snippet(chunks, 0, '[', ']', ' … ', 24), bm25(chunks) AS s FROM chunks "
+                "WHERE chunks MATCH ? " + ("AND path GLOB ? " if prefix else "") + "ORDER BY s LIMIT ?",
+                (q, prefix + "*", limit * 3) if prefix else (q, limit * 3)).fetchall()
         seen = {}
         for path, off, snip, score in rows:  # best chunk per file first, then fill with more chunks
             if path in seen:

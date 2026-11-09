@@ -23,3 +23,10 @@ def test_big_file_head_tail(tmp_path):
     body = b"".join(b"filler line %d\n" % i for i in range(60000)) + b"needle_at_the_end\n"
     ix.add("logs/big.log", body); ix.close()
     assert SearchIndex.open(str(tmp_path / "g.sqlite")).search("needle_at_the_end")
+
+
+def test_or_fallback(tmp_path):
+    ix = SearchIndex.create(str(tmp_path / "h.sqlite"))
+    ix.add("a.md", b"alpha beta\n"); ix.add("b.md", b"gamma delta\n"); ix.close()
+    r = SearchIndex.open(str(tmp_path / "h.sqlite")).search("alpha zzzz")
+    assert r and r[0]["path"] == "a.md"
