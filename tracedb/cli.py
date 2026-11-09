@@ -38,6 +38,10 @@ def main(argv=None):
     sp.add_parser("compact")
     p = sp.add_parser("gc"); p.add_argument("--apply", action="store_true"); p.add_argument("--grace", type=float, default=3600)
     p = sp.add_parser("export-catalog"); p.add_argument("--out", default="-")
+    p = sp.add_parser("search", help="full-text search over the store's FTS index (index/fts.sqlite)")
+    p.add_argument("text", nargs="+"); p.add_argument("--prefix", default=""); p.add_argument("--limit", type=int, default=10)
+    p.add_argument("--paths", action="store_true", help="search file paths only")
+    p.add_argument("--index", default="index/fts.sqlite")
     a = ap.parse_args(argv)
     if not a.store:
         print("set --store or TRACEDB_STORE", file=sys.stderr); return 1
@@ -78,6 +82,18 @@ def main(argv=None):
             out(st.gc(a.grace, dry_run=not a.apply))
         elif a.cmd == "compact":
             out(st.compact())
+        elif a.cmd == "search":
+            from .search import SearchIndex
+            st.sync_if_stale()
+            e = st.locate(a.index)
+            if not e:
+                print(f"no index at {a.index}; build with build_index.py", file=sys.stderr); return 4
+            local = os.path.join(st.dir, f"fts-{e['sha'][:16]}.sqlite")
+            if not os.path.exists(local):  # one-time download of the (single-file) index, cached by content hash
+                with open(local + ".tmp", "wb") as f:
+                    f.write(st.read(a.index, max_bytes=1 << 40))
+                os.replace(local + ".tmp", local)
+            out(SearchIndex.open(local).search(" ".join(a.text), a.prefix, a.limit, a.paths))
         elif a.cmd == "export-catalog":
             st.sync()
             f = sys.stdout if a.out == "-" else open(a.out, "w")
