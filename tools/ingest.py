@@ -37,6 +37,7 @@ SECRETS = [
     (re.compile(rb"(?i)(bearer\s+)[A-Za-z0-9._~+/=-]{30,}"), rb"\1[REDACTED:BEARER]"),
     (re.compile(rb"(?i)((?:api[_-]?key|apikey|secret|passwd|password|token)[\"']?\s*[:=]\s*[\"']?)[A-Za-z0-9_\-./+=]{24,}"), rb"\1[REDACTED:CRED]"),
 ]
+TOOL_BIN = ("/links/conductor-app/bin/", "/claude-desktop/claude-code", "/Contents/MacOS/", "/.local/share/mise/")
 BATCH = 256 << 20
 
 
@@ -93,6 +94,8 @@ def main():
                 reason = "secret-name"
             elif ext in SKIP_EXT:
                 reason = "binary-ext"
+            elif any(n in full for n in TOOL_BIN):
+                reason = "tool-binary"
             if not reason:
                 try:
                     sz = os.path.getsize(full)
