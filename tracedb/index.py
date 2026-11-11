@@ -3,7 +3,7 @@
 Why (measured on a 208k-entry / 87 GB store, see bench/results/opt-*.txt): the v1 index (search.py) is ONE 4 GB sqlite
 file that every new machine had to download whole, and it was rebuilt from scratch. v3 changes four things:
 
-* contentless FTS5 (content='', detail=none): only the inverted index is stored, not a second copy of every chunk.
+* contentless FTS5 (content=''): only the inverted index is stored, not a second copy of every chunk.
   Snippets are produced at query time by re-reading the hit's bytes from the store (path + offset are exact).
 * repeated text (system prompts / tool boilerplate repeated in every trace record, identical chunks) is indexed once.
 * the index is a set of *generations* (shards) in the store under index/v3/: MANIFEST.json lists them with the path range
@@ -39,7 +39,9 @@ SCHEMA = f"""
 CREATE TABLE meta(k TEXT PRIMARY KEY, v TEXT);
 CREATE TABLE files(id INTEGER PRIMARY KEY, path TEXT UNIQUE, size INTEGER, sha TEXT, note TEXT, first INTEGER, last INTEGER, nchunks INTEGER);
 CREATE TABLE cm(id INTEGER PRIMARY KEY, fid INTEGER, off INTEGER, rl INTEGER);
-CREATE VIRTUAL TABLE chunks USING fts5(text, content='', detail=none, tokenize="{_TOK}");
+CREATE TABLE dups(orig INTEGER, fid INTEGER, off INTEGER, rl INTEGER);
+CREATE INDEX dups_orig ON dups(orig);
+CREATE VIRTUAL TABLE chunks USING fts5(text, content='', detail=full, tokenize="{_TOK}");
 CREATE VIRTUAL TABLE paths USING fts5(path, content='', tokenize="unicode61 remove_diacritics 2");
 """
 
@@ -77,13 +79,12 @@ def _flat(o, out, seen, depth=0):
 
 
 def chunks_of(path: str, data: bytes, base: int, seen=None, dedupe_chunks=True):
-    """Yield (byte_offset, text, raw_len): ~CHUNK-char line-aligned chunks; raw_len = bytes of the stored file the chunk spans.
-    JSONL is indexed on text-bearing values. `seen` (a set) enables dedupe of repeated values and identical chunks."""
+    """Yield (byte_offset, text, raw_len, hash): ~CHUNK-char line-aligned chunks; raw_len = bytes of the stored file the chunk spans;
+    hash identifies identical chunks (the writer indexes the text once and records the other places in `dups`).
+    JSONL is indexed on text-bearing values. `seen` (a set) enables dedupe of repeated long values inside records."""
     def emit(boff, end, parts):
         t = "\n".join(parts)[: CHUNK * 4]
-        if dedupe_chunks and _dup(t, seen):
-            return None
-        return boff, t, end - boff
+        return boff, t, end - boff, (hash(t) if dedupe_chunks and len(t) >= DEDUP_MIN else None)
     if path.endswith(".jsonl"):
         parts, boff, blen, off, last_end = [], None, 0, base, base
         for line in data.split(b"\n"):
@@ -147,14 +148,23 @@ class GenWriter:
         self.fid = 0
         self.rid = 0
         self.seen: set = set()
+        self.chunk_rows: dict = {}
+        self.ndups = 0
         self.nfiles = self.nchunks = 0
 
     def add_file(self, path, size, sha, note, chunks=()):
         self.fid += 1
         first = self.rid + 1
         n = 0
-        for off, text, rl in chunks:
+        for off, text, rl, h in chunks:
+            if h is not None:
+                o = self.chunk_rows.get(h)
+                if o is not None:  # identical chunk already indexed: remember where else it occurs
+                    self.c.execute("INSERT INTO dups VALUES (?,?,?,?)", (o, self.fid, off, rl)); self.ndups += 1
+                    continue
             self.rid += 1
+            if h is not None:
+                self.chunk_rows[h] = self.rid
             self.c.execute("INSERT INTO chunks(rowid,text) VALUES (?,?)", (self.rid, text))
             self.c.execute("INSERT INTO cm VALUES (?,?,?,?)", (self.rid, self.fid, off, rl))
             n += 1
@@ -270,7 +280,7 @@ def build_shard(args) -> dict:
     ex.shutdown()
     meta = {"lo": rows[0][0] if rows else "", "hi": rows[-1][0] if rows else "", "built": time.time()}
     w.close(meta)
-    return {"file": out, "files": w.nfiles, "chunks": w.nchunks, "bytes": os.path.getsize(out),
+    return {"file": out, "files": w.nfiles, "chunks": w.nchunks, "dups": w.ndups, "bytes": os.path.getsize(out),
             "secs": round(time.time() - t0, 1), "lo": meta["lo"], "hi": meta["hi"]}
 
 
@@ -541,24 +551,35 @@ class IndexSet:
 
     def _gen_hits(self, g, q, prefix, n):
         c = self._conn(g)
-        lo, hi = 1, 1 << 62
+        lo, hi, flo, fhi = 1, 1 << 62, 0, 1 << 62
         if prefix:
-            r = c.execute("SELECT min(first), max(last) FROM files WHERE path>=? AND path<? AND nchunks>0",
+            r = c.execute("SELECT min(first), max(last), min(id), max(id) FROM files WHERE path>=? AND path<?",
                           (prefix, prefix + "\U0010ffff")).fetchall()[0]
-            if r[0] is None:
+            if r[2] is None:
                 return []
-            lo, hi = r
+            lo, hi, flo, fhi = (r[0] or 1), (r[1] or 0), r[2], r[3]
+        out = []
         try:
             rows = c.execute("SELECT rowid, rank FROM chunks WHERE chunks MATCH ? AND rowid BETWEEN ? AND ? ORDER BY rank LIMIT ?",
-                             (q, lo, hi, n)).fetchall()
+                             (q, lo, hi, n)).fetchall() if hi >= lo else []
+            if rows:
+                ids = ",".join(str(r[0]) for r in rows)
+                meta = {r[0]: r[1:] for r in c.execute(
+                    f"SELECT cm.id, f.path, cm.off, cm.rl, f.note FROM cm JOIN files f ON f.id=cm.fid WHERE cm.id IN ({ids})").fetchall()}
+                out = [(sc, *meta[rid]) for rid, sc in rows if rid in meta]
+            # identical chunks: files holding a copy of an indexed chunk score like the indexed one (restricted to the prefix's files)
+            drows = rows if not prefix else c.execute(  # prefix: the indexed copy may live outside it
+                "SELECT rowid, rank FROM chunks WHERE chunks MATCH ? ORDER BY rank LIMIT ?", (q, n * 8)).fetchall()
         except Exception:
-            return []
-        if not rows:
-            return []
-        ids = ",".join(str(r[0]) for r in rows)
-        meta = {r[0]: r[1:] for r in c.execute(
-            f"SELECT cm.id, f.path, cm.off, cm.rl, f.note FROM cm JOIN files f ON f.id=cm.fid WHERE cm.id IN ({ids})").fetchall()}
-        return [(sc, *meta[rid]) for rid, sc in rows if rid in meta]
+            return out
+        if drows:
+            sc_of = dict(drows)
+            ids = ",".join(str(r[0]) for r in drows)
+            for orig, path, off, rl, note in c.execute(
+                    f"SELECT d.orig, f.path, d.off, d.rl, f.note FROM dups d JOIN files f ON f.id=d.fid "
+                    f"WHERE d.orig IN ({ids}) AND d.fid BETWEEN {int(flo)} AND {int(fhi)} LIMIT {n * 4}").fetchall():
+                out.append((sc_of[orig], path, off, rl, note))
+        return out
 
     def search(self, text: str, prefix: str = "", limit: int = 10, paths_only: bool = False, snippets: bool = True) -> list[dict]:
         gens = self._gens_for(prefix)
@@ -593,18 +614,33 @@ class IndexSet:
         return out
 
     def _fill_snippets(self, out, terms):
-        for o in out:
-            try:
-                n = min(max(o["_rl"], 1), SNIP_FETCH)
-                if o["_blob"]:
+        """Re-read each hit's bytes (one parallel read_many for the whole page of hits) and cut a snippet around the terms."""
+        reqs, raws = {}, {}
+        for i, o in enumerate(out):
+            n = min(max(o["_rl"], 1), SNIP_FETCH)
+            if o["_blob"]:
+                try:
                     from .blob import get_blob
-                    raw = get_blob(self.dst, o["path"], o["offset"], o["offset"] + n, max_bytes=-1)
-                else:
-                    e = self.dst.locate(o["path"])
-                    raw = self.dst.read(o["path"], o["offset"], min(o["offset"] + n, e["size"]), max_bytes=-1) if e else b""
+                    raws[i] = get_blob(self.dst, o["path"], o["offset"], o["offset"] + n, max_bytes=-1)
+                except Exception:
+                    pass
+            else:
+                e = self.dst.locate(o["path"])
+                if e:
+                    reqs[i] = (o["path"], o["offset"], min(o["offset"] + n, e["size"]))
+        if reqs:
+            try:
+                got = self.dst.read_many(list(reqs.values()), max_bytes=-1)
             except Exception:
+                got = {}
+            for i, rq in reqs.items():
+                if rq in got:
+                    raws[i] = got[rq]
+        for i, o in enumerate(out):
+            raw = raws.get(i)
+            if raw is None:
                 continue
-            txt = "\n".join(t for _, t, _ in chunks_of(o["path"], raw, o["offset"], None, False)) or raw.decode("utf8", "replace")
+            txt = "\n".join(t for _, t, _, _ in chunks_of(o["path"], raw, o["offset"], None, False)) or raw.decode("utf8", "replace")
             o["snippet"] = make_snippet(txt, terms)
 
     def _search_paths(self, text, prefix, limit, gens):

@@ -52,6 +52,17 @@ def test_dedupe_boilerplate(tmp_path):
     assert n1 <= 1 < n2
 
 
+def test_identical_chunks_stay_findable(tmp_path):
+    from tracedb.store import open_store
+    st = open_store(str(tmp_path / "s"), cache_dir=str(tmp_path / "c"))
+    body = b"shared notes about quokka rewilding " * 8 + b"\n"
+    st.put([("a/one.md", body, {}), ("b/two.md", body, {})])
+    build_index(st, st, jobs=1, work=str(tmp_path / "w")); st.sync()
+    ix = IndexSet.open(st)
+    assert {h["path"] for h in ix.search("quokka")} == {"a/one.md", "b/two.md"}
+    assert [h["path"] for h in ix.search("quokka", prefix="b/")] == ["b/two.md"]
+
+
 def test_incremental(tmp_path):
     st, work = mk(tmp_path)
     build_index(st, st, jobs=1, work=work)
