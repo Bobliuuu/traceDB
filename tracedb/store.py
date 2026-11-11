@@ -121,6 +121,7 @@ class Store:
         self.db.execute("PRAGMA mmap_size=268435456")
         self._pool = ThreadPoolExecutor(workers)
         self._head_etag: Optional[str] = None
+        self._stamp = os.path.join(self.dir, "last_sync")
         self._warmed = False
         self._lock = threading.RLock()
         self.stats = {"requests": 0, "bytes": 0, "cache_hits": 0}
@@ -132,18 +133,21 @@ class Store:
         return json.loads(raw)["segments"] if raw else []
 
     def sync_if_stale(self, ttl: Optional[float] = None) -> Optional[dict]:
-        """Skip the ~70 ms HEAD round trip if we synced within ttl seconds (env TRACEDB_SYNC_TTL, default 0 = always)."""
+        """Skip the ~70 ms HEAD round trip if anything (this or another process) synced within ttl seconds
+        (env TRACEDB_SYNC_TTL, default 0 = always). The stamp is a file in the cache dir, so separate CLI calls share it."""
         ttl = float(os.environ.get("TRACEDB_SYNC_TTL", 0)) if ttl is None else ttl
-        if ttl > 0 and time.time() - getattr(self, "_last_sync", 0) < ttl:
-            return None
+        if ttl > 0:
+            try:
+                last = max(getattr(self, "_last_sync", 0), os.path.getmtime(self._stamp))
+            except OSError:
+                last = getattr(self, "_last_sync", 0)
+            if time.time() - last < ttl:
+                return None
         return self.sync()
 
     def sync(self) -> dict:
         """Pull only segments we do not have. One HEAD GET when nothing changed."""
         self._last_sync = time.time()
-        if not self._warmed:  # TLS handshakes in parallel, once, so first reads do not pay them serially
-            self._warmed = True
-            self._pool.submit(self.b.warm, self.workers)
         with self._lock:
             ids = self._segment_ids()
             have = {r[0] for r in self.db.execute("SELECT id FROM segs")}
@@ -160,6 +164,11 @@ class Store:
                 self._apply(rows)
                 self.db.execute("INSERT OR REPLACE INTO segs VALUES(?,?)", (i, ids.index(i)))  # another process may have synced it
             self.db.commit()
+            try:
+                with open(self._stamp, "a"):
+                    os.utime(self._stamp)
+            except OSError:
+                pass
             return {"segments": len(ids), "new": len(new), "entries": self.count()}
 
     @staticmethod
@@ -498,12 +507,24 @@ class Store:
             per_item.append((e, start, end, bl))
             spans += [(pk, off, off + cl) for pk, off, cl, _, _ in bl]
         merged = self._merge(spans)
+        if len(merged) >= 8 and not self._warmed:  # parallel TLS handshakes once; metadata-only commands never pay for them
+            self._warmed = True
+            self.b.warm(min(self.workers, len(merged)))
         blobs = dict(zip(map(tuple, merged), self._pool.map(self._fetch_span, map(tuple, merged))))
 
+        import bisect
+        by_pack: dict = {}
+        for (mp, ma, mb), d in blobs.items():
+            by_pack.setdefault(mp, []).append((ma, mb, d))
+        for v in by_pack.values():
+            v.sort(key=lambda t: t[0])
+        starts = {k: [t[0] for t in v] for k, v in by_pack.items()}
+
         def cut(pk, a, b):
-            for (mp, ma, mb), d in blobs.items():
-                if mp == pk and ma <= a and b <= mb:
-                    return d[a - ma:b - ma]
+            v = by_pack.get(pk, [])
+            i = bisect.bisect_right(starts.get(pk, []), a) - 1
+            if i >= 0 and v[i][0] <= a and b <= v[i][1]:
+                return v[i][2][a - v[i][0]:b - v[i][0]]
             raise AssertionError("span missing")
         out = {}
         for e, start, end, bl in per_item:
@@ -554,6 +575,28 @@ class Store:
     def read(self, path: str, start: int = 0, end: Optional[int] = None, max_bytes: Optional[int] = None) -> bytes:
         r = self.read_many([(path, start, end)], max_bytes)
         return next(iter(r.values()))
+
+    def read_to_file(self, path: str, out: str, workers: int = 12, piece: int = 16 << 20) -> int:
+        """Stream a (possibly multi-GB) entry to a local file with bounded memory (~workers x piece), parallel ranges.
+        `read()` of a 4 GB entry holds ~3 copies in RAM; this holds a few pieces. Returns bytes written."""
+        from concurrent.futures import ThreadPoolExecutor
+        e = self.locate(path)
+        if e is None:
+            raise NotFound(path)
+        size = e["size"]
+        fd = os.open(out, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
+        try:
+            os.ftruncate(fd, size)
+
+            def one(a):
+                b = min(a + piece, size)
+                d = self.read_many([(path, a, b)], max_bytes=-1)[(path, a, b)]
+                os.pwrite(fd, d, a)
+            with ThreadPoolExecutor(workers) as ex:
+                list(ex.map(one, range(0, size, piece)))
+        finally:
+            os.close(fd)
+        return size
 
     def head(self, path: str, n: int = 4096) -> bytes:
         return self.read(path, 0, n, max_bytes=max(n, 1))
@@ -622,4 +665,6 @@ def open_store(spec: str, name: Optional[str] = None, **kw) -> Store:
     else:
         be = LocalBackend(spec)
         nm = name or "local-" + hashlib.sha256(os.path.abspath(spec).encode()).hexdigest()[:10]
-    return Store(be, name=nm, **kw)
+    st = Store(be, name=nm, **kw)
+    st.spec = spec
+    return st
