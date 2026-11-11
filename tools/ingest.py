@@ -56,6 +56,9 @@ def walk(src):
     for dp, dns, fns in os.walk(src):
         dns[:] = [d for d in dns if d not in SKIP_DIRS and not d.endswith(".egg-info")]
         for f in fns:
+            fp = os.path.join(dp, f)
+            if not os.path.islink(fp) and not os.path.isfile(fp):
+                continue  # fifo/socket/device: open() would block forever
             yield dp, f
 
 
