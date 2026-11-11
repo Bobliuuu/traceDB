@@ -54,3 +54,23 @@ Concurrent appenders to the *same* path: last committed row wins (same as overwr
 - Appends to growing files store only the tail (extents); edited (non-prefix) files are stored whole.
 - Path overwrite = latest segment wins; no history API yet.
 - In-process catalog only; a daemon/mmap'd shared catalog would help many agents on one box.
+
+## Search index v3 (`tracedb/index.py`, `tracedb index build|update|stats`, `tracedb search`)
+Lives in the store under `index/v3/`: `MANIFEST.json` + generation files `g-*.sqlite` (+ `.files` state). Built *from the store*
+(catalog + ranged head/tail reads), not from local source dirs, so it always matches what `tracedb get` returns.
+- Contentless FTS5 (`content=''`, detail=full for bm25): the 3.1 GB of duplicated chunk text in the v1 file is gone; snippets are
+  cut at query time from the hit's own bytes (one parallel `read_many` per page of hits). Hit = path + byte offset + raw length.
+- Dedupe: repeated long JSON values (system prompts, boilerplate) are indexed once; identical chunks are indexed once and the other
+  locations live in a `dups` table, so every file holding the text is still returned.
+- Generations: a full build makes N path-range shards (built in parallel processes); `update` adds a delta generation with the
+  new/changed entries and tombstones (`dead`) for changed/removed ones. Search opens only generations whose [lo,hi] overlaps
+  `--prefix`; a prefix is a rowid range inside a generation (rows are path-sorted), so it is an index range scan.
+- Lazy reads: with `apsw` installed a generation is opened through a read-only VFS over `Store.read` (only the touched 1 MiB
+  blocks cross the network, disk-cached by content); without it the needed generations are streamed to the cache
+  (`Store.read_to_file`, parallel ranges, bounded memory) once.
+- Coverage: every catalog entry has its path indexed; text-extension files by content (192 KiB head + 32 KiB tail, 64 KiB head
+  for blobs); `index_catalog_digest` makes `update` a no-op when nothing changed.
+The v1 `index/fts.sqlite` + `search.py` remain readable (`tracedb search` falls back to it when no v3 manifest exists).
+Also: `Store.read_to_file` (v1 `read()` of a 4 GB entry held ~3 copies in RAM and, being one coalesced span, one serial GET);
+connection warm-up only for fan-out reads (metadata commands were paying ~0.2 s at exit); `sync_if_stale` shares its TTL stamp
+across processes. Numbers: bench/results/opt-*.txt.

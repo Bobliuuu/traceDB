@@ -143,8 +143,11 @@ class GenWriter:
         if os.path.exists(path):
             os.remove(path)
         self.path = path
-        self.c = sqlite3.connect(path)
-        self.c.executescript("PRAGMA journal_mode=OFF; PRAGMA synchronous=OFF; PRAGMA page_size=4096;" + SCHEMA)
+        self.c = sqlite3.connect(path, isolation_level=None)
+        self.c.execute("PRAGMA page_size=4096"); self.c.execute("PRAGMA journal_mode=OFF"); self.c.execute("PRAGMA synchronous=OFF")
+        self.c.execute("PRAGMA cache_size=-262144")
+        self.c.executescript(SCHEMA)
+        self.c.execute("BEGIN")
         self.fid = 0
         self.rid = 0
         self.seen: set = set()
@@ -172,15 +175,16 @@ class GenWriter:
                        (self.fid, path, size, sha, note, first if n else None, self.rid if n else None, n))
         self.c.execute("INSERT INTO paths(rowid,path) VALUES (?,?)", (self.fid, path))
         self.nfiles += 1; self.nchunks += n
+        if self.nfiles % 2000 == 0:
+            self.c.execute("COMMIT"); self.c.execute("BEGIN")
         return n
 
     def close(self, meta: dict):
         for k, v in meta.items():
             self.c.execute("INSERT OR REPLACE INTO meta VALUES (?,?)", (k, json.dumps(v)))
-        self.c.commit()
+        self.c.execute("COMMIT")
         self.c.execute("INSERT INTO chunks(chunks) VALUES('optimize')")
         self.c.execute("INSERT INTO paths(paths) VALUES('optimize')")
-        self.c.commit()
         self.c.execute("VACUUM")
         self.c.close()
 

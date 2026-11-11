@@ -1,0 +1,16 @@
+{
+ "cold_first_search_s": 9.29,
+ "cold_first_search_net_of_catalog_sync_s": 1.11,
+ "index_bytes": 62640128,
+ "index_gens": 4,
+ "index_chunks": 98729,
+ "cold_gens_opened": 1,
+ "cold_block_fetches": 8,
+ "warm_search_p50_ms": 209.7,
+ "warm_search_p95_ms": 695.9,
+ "warm_search_nosnippet_p50_ms": 66.9,
+ "old_warm_search_p50_ms": 53.5,
+ "recall_at_10_vs_old": 0.695,
+ "old_top1_in_new_top3": 0.667,
+ "pairs_compared": 54
+}

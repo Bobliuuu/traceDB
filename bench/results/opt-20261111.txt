@@ -1,0 +1,25 @@
+traceDB 0.3.0 optimization benchmark (laptop -> us-east-1, 2026-11-11; machine heavily loaded, load avg 20-30)
+store: ~208k-342k entries (ingest was running), main store read-only; scratch prefix used for indexes.
+
+Profile of v0.2.0 on the real store (read-only):
+  ls/locate/plan/get --head  ~0.55-0.6 s per CLI call warm  (python+boto3 0.2 s, HEAD sync 0.07 s, 64-conn warm-up at exit 0.2 s)
+  first call, empty cache: catalog sync ~6-7 s (32 segments, 14 MB, 208k rows)
+  export-catalog 0.56 s; summary depth1 0.37 s
+  search cold: index = one 4.0 GB entry (820 MB wire). read() coalesces it into ONE serial GET (~8 MB/s => ~2 min), then holds
+    ~3 copies (12 GB RAM on a 16 GB Mac). Parallel ranged streaming (read_to_file) of the SAME file: 12.3 s.
+  old index parts: chunk text copy 3.1 GB, inverted index 0.61 GB, rest small.
+
+Before/after (index-level):
+                              old v1 (fts.sqlite)    new v3 full store      new v3 subset(config+codex+ten-percent)
+  index size (raw)            4.0 GB (820 MB wire)   785 MB                 63 MB
+  chunks                      2.19M                  1.07M (+dups table)    98.7k (old: 127k for same prefixes)
+  entries covered             226k (paths)           342k (all catalog)     18.5k
+  build time                  ~30 min                3.2 min (4 procs)      23 s   (reads head+tail only, from store)
+  cold first search           ~4 min (HANDOFF)       10.2 s total, of which 7.4 s is catalog sync; 2.9 s search (27 blocks)
+                              (12 s w/ read_to_file)
+  warm search, no snippets    40-55 ms (sqlite)      24 ms p50              1.4-67 ms
+  warm search with snippets   same                   415 ms p50 (uncached ranged reads of hit bytes); repeat 3-5 ms
+  recall@10 vs old index      -                      0.49 (store grew 50%)  0.69 (recall@50 0.87)
+  top1 of old in new top3     -                      0.47                   0.67
+Recall notes: many of the 20 queries fall to the OR fallback (arbitrary among ties); idf is per generation not global; dedupe of
+repeated JSON values; old index is an older snapshot. Offsets verified exact in tests (get --start/--end contains the text).

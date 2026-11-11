@@ -1,0 +1,24 @@
+RUN s3://<bucket>/<bench-prefix>/ files=27646 (client = laptop, not in-region)
+COND create-only PUT ok
+COND stale CAS refused ok
+INGEST secs=164.4 packs=7 wire=199MiB
+COLD_SYNC entries=27646 secs=14.81
+WARM_SYNC ms=128
+APPEND base put 20.5MiB secs=2.21
+APPEND +107KiB: packs grew 12KiB secs=1.13
+APPEND +107KiB: packs grew 12KiB secs=0.93
+APPEND +107KiB: packs grew 12KiB secs=1.01
+APPEND cold tail-4KiB read ms=303 correct=True
+APPEND whole read 20.9MiB ms=771 correct=True (sha-checked)
+INTEGRITY corrupted pack read raises CorruptBlock ok
+INTEGRITY deep verify flags it: True
+TOUCH real S3: mtime advanced=True object_intact=True
+GC grace=3600 apply (orphans are fresh): {'dry_run': False, 'grace_seconds': 3600, 'live': 16, 'skipped_young': 2, 'orphans': 0, 'orphan_bytes': 0, 'deleted': 0, 'orphan_keys': 0}
+GC grace=0 dry-run: {'dry_run': True, 'grace_seconds': 0, 'live': 16, 'skipped_young': 0, 'orphans': 2, 'orphan_bytes': 404, 'deleted': 0, 'orphan_keys': 2}
+GC grace=0 apply: {'dry_run': False, 'grace_seconds': 0, 'live': 16, 'skipped_young': 0, 'orphans': 2, 'orphan_bytes': 404, 'deleted': 2, 'orphan_keys': 2}
+GC orphan gone: True | live data intact: True
+VERIFY deep (all 27647 entries re-hashed from S3) secs=462.4 ok=True
+CONCURRENT 6x3 puts secs=33.1 entries=18/18 errors=[]
+COMPACT 27665 secs=8.4
+VERIFY after compact ok: True
+CLEANUP deleted=58 remaining=0

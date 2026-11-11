@@ -1,12 +1,13 @@
 [project]
 name = "tracedb"
-version = "0.2.0"
+version = "0.3.0"
 description = "Fast, budgeted, content-addressed trace/data store over S3"
 requires-python = ">=3.10"
 dependencies = []
 [project.optional-dependencies]
 s3 = ["boto3"]
 zstd = ["zstandard"]
+lazy = ["apsw"]
 test = ["pytest"]
 [project.scripts]
 tracedb = "tracedb.cli:main"
