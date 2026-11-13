@@ -1,0 +1,204 @@
+{
+ "s3_pulls": [
+  {
+   "what": "1 small file",
+   "files": 1,
+   "raw_mib": 0.0,
+   "wire_mib": 0.0,
+   "reqs": 1,
+   "ms": 170.0
+  },
+  {
+   "what": "10 small",
+   "files": 10,
+   "raw_mib": 0.2,
+   "wire_mib": 0.0,
+   "reqs": 10,
+   "ms": 343.0
+  },
+  {
+   "what": "100 small",
+   "files": 100,
+   "raw_mib": 0.8,
+   "wire_mib": 2.7,
+   "reqs": 79,
+   "ms": 766.0
+  },
+  {
+   "what": "1000 small",
+   "files": 1000,
+   "raw_mib": 7.7,
+   "wire_mib": 49.6,
+   "reqs": 162,
+   "ms": 1399.0
+  },
+  {
+   "what": "20 mid(64K-1M)",
+   "files": 20,
+   "raw_mib": 3.5,
+   "wire_mib": 1.0,
+   "reqs": 19,
+   "ms": 146.0
+  },
+  {
+   "what": "5 big(>2M)",
+   "files": 5,
+   "raw_mib": 16.1,
+   "wire_mib": 2.3,
+   "reqs": 4,
+   "ms": 108.0
+  }
+ ],
+ "pull_1000": {
+  "what": "1000 small",
+  "files": 1000,
+  "raw_mib": 7.7,
+  "wire_mib": 49.6,
+  "reqs": 162,
+  "ms": 1399.0
+ },
+ "pull_5big": {
+  "what": "5 big(>2M)",
+  "files": 5,
+  "raw_mib": 16.1,
+  "wire_mib": 2.3,
+  "reqs": 4,
+  "ms": 108.0
+ },
+ "pull_1": {
+  "what": "1 small file",
+  "files": 1,
+  "raw_mib": 0.0,
+  "wire_mib": 0.0,
+  "reqs": 1,
+  "ms": 170.0
+ },
+ "head_get_ms": 69.0,
+ "cold_sync_entries": 27646,
+ "cold_sync_s": 0.88,
+ "range_4k_ms": 69.0,
+ "writers": 6,
+ "writer_puts": 3,
+ "writer_entries": 18,
+ "files": 27646,
+ "raw_mib": 670,
+ "packs": 7,
+ "wire_mib": 199,
+ "wire_pct": 30,
+ "verify_ok": true,
+ "sweep": [
+  {
+   "gap": "16K",
+   "workers": "16 workers",
+   "ms": 3044.0,
+   "amp": 0.6,
+   "reqs": 697
+  },
+  {
+   "gap": "64K",
+   "workers": "16 workers",
+   "ms": 1933.0,
+   "amp": 1.8,
+   "reqs": 428
+  },
+  {
+   "gap": "256K",
+   "workers": "16 workers",
+   "ms": 1407.0,
+   "amp": 6.5,
+   "reqs": 154
+  },
+  {
+   "gap": "1024K",
+   "workers": "16 workers",
+   "ms": 2336.0,
+   "amp": 14.0,
+   "reqs": 34
+  },
+  {
+   "gap": "16K",
+   "workers": "64 workers",
+   "ms": 1457.0,
+   "amp": 0.6,
+   "reqs": 697
+  },
+  {
+   "gap": "64K",
+   "workers": "64 workers",
+   "ms": 774.0,
+   "amp": 1.8,
+   "reqs": 428
+  },
+  {
+   "gap": "256K",
+   "workers": "64 workers",
+   "ms": 5223.0,
+   "amp": 6.5,
+   "reqs": 154
+  },
+  {
+   "gap": "1024K",
+   "workers": "64 workers",
+   "ms": 6609.0,
+   "amp": 14.0,
+   "reqs": 34
+  }
+ ],
+ "sweep_best": {
+  "gap": "64K",
+  "workers": "64 workers",
+  "ms": 774.0,
+  "amp": 1.8,
+  "reqs": 428
+ },
+ "sweep_before_ms": 1407.0,
+ "sweep_before_amp": 6.5,
+ "sweep_after_ms": 774.0,
+ "sweep_after_amp": 1.8,
+ "sweep_speedup": 1.82,
+ "append": {
+  "base_raw_mib": 40.0,
+  "whole_file_kib": 20316,
+  "added_kib": 49.0,
+  "n": 10,
+  "put_ms": 51,
+  "ratio": 415
+ },
+ "append_rows": [
+  {
+   "what": "append 100 KiB tail (extent)",
+   "kib": 49.0
+  },
+  {
+   "what": "re-store whole file",
+   "kib": 20316
+  }
+ ],
+ "index": {
+  "old_gb": 4.0,
+  "new_gb": 0.785412096,
+  "shrink": 5.0928678338052995,
+  "chunks": 1065173,
+  "cold_s": 10.22,
+  "cold_net_s": 2.86,
+  "warm_nosnip_ms": 23.7,
+  "old_warm_ms": 40.1,
+  "warm_snip_ms": 414.8,
+  "recall10": 0.491,
+  "old_cold_min": 4
+ },
+ "index_size": [
+  {
+   "index": "v1 (single sqlite file)",
+   "gb": 4.0
+  },
+  {
+   "index": "v3 (sharded, contentless FTS5)",
+   "gb": 0.785
+  }
+ ],
+ "tests": 52,
+ "src_lines": 2099,
+ "cli_commands": 16,
+ "zero_deps": true
+}

@@ -1,0 +1,204 @@
+1
+00:00:00,400 --> 00:00:06,466
+traceDB: a fast, byte budgeted, content addressed store for agent traces and research data, on
+
+2
+00:00:06,466 --> 00:00:08,015
+S3 or a local directory.
+
+3
+00:00:08,015 --> 00:00:13,501
+This is a short tour of how it works, what we measured, and what is still unmeasured.
+
+4
+00:00:14,500 --> 00:00:16,528
+Agents leave behind a lot of data.
+
+5
+00:00:16,528 --> 00:00:21,180
+Thousands of small trace files, and now and then a log that is gigabytes long.
+
+6
+00:00:21,180 --> 00:00:26,011
+Storing one S3 object per file means one request per file, and listings are slow.
+
+7
+00:00:26,011 --> 00:00:31,617
+And an agent that reads a whole log by mistake wastes both its context window and the network.
+
+8
+00:00:32,620 --> 00:00:34,668
+The layout has three kinds of object.
+
+9
+00:00:34,668 --> 00:00:39,428
+Packs are immutable, around thirty two mebibytes, made of one mebibyte blocks that are
+
+10
+00:00:39,428 --> 00:00:40,812
+compressed independently.
+
+11
+00:00:40,812 --> 00:00:46,015
+Segments are immutable catalog deltas that say which path lives in which pack at which offset.
+
+12
+00:00:46,015 --> 00:00:48,671
+And a single small HEAD file lists the segments.
+
+13
+00:00:48,671 --> 00:00:53,210
+HEAD is the only thing that ever changes, and it is updated with compare and swap.
+
+14
+00:00:54,210 --> 00:00:55,549
+Writes are crash safe.
+
+15
+00:00:55,549 --> 00:01:01,330
+Packs are written first, then the segment, then the HEAD swap, so a crash leaves only invisible
+
+16
+00:01:01,330 --> 00:01:01,817
+orphans.
+
+17
+00:01:01,817 --> 00:01:07,233
+Concurrent writers never block each other: on real S3, 6 concurrent writers lost nothing.
+
+18
+00:01:07,233 --> 00:01:10,946
+And every read has a byte budget, eight mebibytes by default.
+
+19
+00:01:10,946 --> 00:01:16,423
+A read over budget fails with a plan that shows the bytes and requests it would have cost.
+
+20
+00:01:17,420 --> 00:01:18,523
+Using it is simple.
+
+21
+00:01:18,523 --> 00:01:23,803
+Point it at a bucket prefix or a local directory, put a folder, then plan a read to see its
+
+22
+00:01:23,803 --> 00:01:28,445
+cost without fetching anything, and get just the first four kilobytes of a file.
+
+23
+00:01:29,450 --> 00:01:38,634
+On real agent trace and repository data, 27,646 files and 670 became 7 packs, at 30 percent of
+
+24
+00:01:38,634 --> 00:01:39,904
+the raw size.
+
+25
+00:01:40,900 --> 00:01:47,395
+Here are real S3 pulls from a laptop, where each round trip is about seventy milliseconds.
+
+26
+00:01:47,395 --> 00:01:51,942
+One small file takes 170 milliseconds, which is one round trip.
+
+27
+00:01:51,942 --> 00:01:57,860
+Five large files, 16.1 mebibytes of raw data, take 108 milliseconds in 4 requests.
+
+28
+00:01:57,860 --> 00:02:01,757
+A thousand random small files take 1,399 milliseconds.
+
+29
+00:02:02,760 --> 00:02:08,933
+Random small files were the hard case, so we swept two settings: how large a gap between ranges
+
+30
+00:02:08,933 --> 00:02:12,052
+may be coalesced, and how many parallel workers.
+
+31
+00:02:12,052 --> 00:02:17,121
+The earlier setting took 1,407 milliseconds with 6.5 times read amplification.
+
+32
+00:02:17,121 --> 00:02:23,099
+The new defaults, sixty four workers and a sixty four kilobyte gap, take 774 milliseconds at
+
+33
+00:02:23,099 --> 00:02:24,658
+1.8 times amplification.
+
+34
+00:02:25,660 --> 00:02:27,911
+Agent sessions grow by appending.
+
+35
+00:02:27,911 --> 00:02:33,983
+When new bytes start with the stored bytes, traceDB stores only the tail as a new extent.
+
+36
+00:02:33,983 --> 00:02:40,327
+On the local backend, appending a hundred kilobytes to a forty mebibyte session adds about 49
+
+37
+00:02:40,327 --> 00:02:44,148
+kibibytes of pack, instead of re storing the whole file.
+
+38
+00:02:44,148 --> 00:02:48,582
+That is roughly 415 times less, in about 51 milliseconds per put.
+
+39
+00:02:49,580 --> 00:02:52,319
+Search is built from the store itself.
+
+40
+00:02:52,319 --> 00:02:58,877
+The version three index is sharded, uses contentless full text search, and dedupes repeated
+
+41
+00:02:58,877 --> 00:02:59,238
+text.
+
+42
+00:02:59,238 --> 00:03:04,860
+On the real store it shrank from 4.0 gigabytes to 0.79, a 5.1 times reduction.
+
+43
+00:03:04,860 --> 00:03:09,977
+A cold first search takes 10.2 seconds, against about 4 minutes before.
+
+44
+00:03:10,980 --> 00:03:12,169
+Some honest caveats.
+
+45
+00:03:12,169 --> 00:03:17,756
+The S3 numbers come from a laptop, so network round trips dominate, and an in region benchmark
+
+46
+00:03:17,756 --> 00:03:18,648
+is still to do.
+
+47
+00:03:18,648 --> 00:03:24,116
+Recall of the new search index against the old one is 0.49 at ten, on a store that has since
+
+48
+00:03:24,116 --> 00:03:24,948
+grown by half.
+
+49
+00:03:24,948 --> 00:03:30,476
+Files that are edited rather than appended are stored whole, and there is no history API yet.
+
+50
+00:03:31,480 --> 00:03:32,048
+traceDB.
+
+51
+00:03:32,048 --> 00:03:36,872
+The code, the design notes and every benchmark file are in the repo.
+

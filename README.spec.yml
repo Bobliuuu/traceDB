@@ -1,0 +1,345 @@
+# Spec for ~/video-readme-maker:  python3 tools/readme_data.py && python3 ~/video-readme-maker/vrm.py all README.spec.yml
+# Every number comes from bench/results/*.{txt,json}, parsed by tools/readme_data.py into bench/results/derived/readme_data.json.
+project:
+  name: traceDB
+  emoji: "🗄️"
+  tagline: "A fast, byte-budgeted, content-addressed store for agent traces and research data, over S3 or a local directory"
+  repo: Bobliuuu/traceDB
+hero:
+  title: traceDB
+  subtitle: "agents get the bytes they asked for, and never more"
+  chips: [content-addressed, byte budget, S3 or local, zero dependencies]
+theme: {accent: "#27c8e8", accent2: "#ff6b6b", accent3: "#f2c14e", good: "#3ddc97"}
+readme_out: README.md
+assets_dir: assets
+badges:
+  - {label: python, message: "3.10+", color: 3776ab, logo: python}
+  - {label: dependencies, message: "zero (boto3 optional)", color: 3ddc97}
+  - {label: tests, message: "{{ n.tests }} passing", color: 3ddc97}
+  - {label: S3 pull, message: "1 request per directory", color: 27c8e8, logo: amazons3}
+  - {label: byte budget, message: "8 MiB default", color: f2c14e}
+  - {label: release, message: v0.3.1, color: 27c8e8, logo: github, link: "https://github.com/Bobliuuu/traceDB/releases/tag/v0.3.1"}
+  - {label: pairs with, message: ontolagni, color: ff6b6b, link: "https://github.com/Bobliuuu/ontolagni"}
+nav:
+  - {emoji: "🎬", label: Video, anchor: video}
+  - {emoji: "🚀", label: Quick use, anchor: quick-use}
+  - {emoji: "📊", label: Results, anchor: results}
+  - {emoji: "🧩", label: How it works, anchor: how-it-works}
+  - {emoji: "🔎", label: Search index, anchor: search-index}
+  - {emoji: "⚠️", label: Gaps, anchor: caveats}
+  - {emoji: "🗺️", label: Repo map, anchor: repo-map}
+
+numbers:
+  files: {file: bench/results/derived/readme_data.json, path: files, fmt: "{:,.0f}"}
+  raw_mib: {file: bench/results/derived/readme_data.json, path: raw_mib, unit: " MiB"}
+  wire_mib: {file: bench/results/derived/readme_data.json, path: wire_mib, unit: " MiB"}
+  packs: {file: bench/results/derived/readme_data.json, path: packs}
+  wire_pct: {file: bench/results/derived/readme_data.json, path: wire_pct, unit: "%"}
+  head_ms: {file: bench/results/derived/readme_data.json, path: head_get_ms, unit: " ms"}
+  cold_sync_s: {file: bench/results/derived/readme_data.json, path: cold_sync_s, unit: " s", fmt: "{:.2f}"}
+  p1_ms: {file: bench/results/derived/readme_data.json, path: pull_1.ms, unit: " ms"}
+  p1000_ms: {file: bench/results/derived/readme_data.json, path: pull_1000.ms, unit: " ms", fmt: "{:,.0f}"}
+  p1000_reqs: {file: bench/results/derived/readme_data.json, path: pull_1000.reqs}
+  big_ms: {file: bench/results/derived/readme_data.json, path: pull_5big.ms, unit: " ms"}
+  big_reqs: {file: bench/results/derived/readme_data.json, path: pull_5big.reqs}
+  big_raw: {file: bench/results/derived/readme_data.json, path: pull_5big.raw_mib, unit: " MiB", fmt: "{:.1f}"}
+  writers: {file: bench/results/derived/readme_data.json, path: writers}
+  writer_entries: {file: bench/results/derived/readme_data.json, path: writer_entries}
+  sw_before: {file: bench/results/derived/readme_data.json, path: sweep_before_ms, unit: " ms", fmt: "{:,.0f}"}
+  sw_after: {file: bench/results/derived/readme_data.json, path: sweep_after_ms, unit: " ms", fmt: "{:,.0f}"}
+  sw_amp_before: {file: bench/results/derived/readme_data.json, path: sweep_before_amp, unit: "x", fmt: "{:.1f}"}
+  sw_amp_after: {file: bench/results/derived/readme_data.json, path: sweep_after_amp, unit: "x", fmt: "{:.1f}"}
+  sw_speedup: {file: bench/results/derived/readme_data.json, path: sweep_speedup, unit: "x", fmt: "{:.1f}"}
+  app_kib: {file: bench/results/derived/readme_data.json, path: append.added_kib, unit: " KiB", fmt: "{:.0f}"}
+  app_whole_mib: {file: bench/results/derived/readme_data.json, path: "append.whole_file_kib", unit: " KiB", fmt: "{:,.0f}"}
+  app_ratio: {file: bench/results/derived/readme_data.json, path: append.ratio, unit: "x", fmt: "{:.0f}"}
+  app_ms: {file: bench/results/derived/readme_data.json, path: append.put_ms, unit: " ms"}
+  app_base: {file: bench/results/derived/readme_data.json, path: append.base_raw_mib, unit: " MiB", fmt: "{:.0f}"}
+  idx_old_gb: {file: bench/results/derived/readme_data.json, path: index.old_gb, unit: " GB", fmt: "{:.1f}"}
+  idx_new_gb: {file: bench/results/derived/readme_data.json, path: index.new_gb, unit: " GB", fmt: "{:.2f}"}
+  idx_shrink: {file: bench/results/derived/readme_data.json, path: index.shrink, unit: "x", fmt: "{:.1f}"}
+  idx_cold: {file: bench/results/derived/readme_data.json, path: index.cold_s, unit: " s", fmt: "{:.1f}"}
+  idx_old_cold: {file: bench/results/derived/readme_data.json, path: index.old_cold_min, unit: " minutes"}
+  idx_warm: {file: bench/results/derived/readme_data.json, path: index.warm_nosnip_ms, unit: " ms", fmt: "{:.0f}"}
+  idx_chunks: {file: bench/results/derived/readme_data.json, path: index.chunks, fmt: "{:,.0f}"}
+  idx_recall: {file: bench/results/derived/readme_data.json, path: index.recall10, fmt: "{:.2f}"}
+  tests: {file: bench/results/derived/readme_data.json, path: tests}
+  cli_cmds: {file: bench/results/derived/readme_data.json, path: cli_commands}
+
+intro: |
+  <a id="video"></a>
+  **traceDB** is a store for agent traces and research data that behaves well when an agent, not a person, is the reader. Many small files are
+  packed into a few large immutable, content-addressed objects on **S3 (or a local directory)**, a local catalog knows where every byte lives, and
+  **every read is capped by a byte budget** so an agent can never accidentally pull a 4 GB log into its context.
+
+  It pairs with [ontolagni](https://github.com/Bobliuuu/ontolagni): *ontolagni says where data is, traceDB fetches it.*
+  The design notes are in [DESIGN.md](DESIGN.md); this page summarises what is measured in [`bench/results/`](bench/results).
+
+video:
+  url: ""
+  caption: "Explainer video (with voice-over and subtitles): why traceDB exists, how it stores and reads, and what we measured"
+  mp4: video/tracedb_explainer.mp4
+  gif: video/preview.gif
+  srt: video/tracedb_explainer.srt
+  poster: video/poster.png
+  out_dir: video/.render
+  fps: 24
+  max_mb: 22
+  render_crf: 18
+  concurrency: 4
+  music: true
+  voice: {engine: openai, voice: alloy, model: gpt-4o-mini-tts, tempo: 1.15}
+  scenes:
+    - type: title
+      title: traceDB
+      subtitle: A byte-budgeted, content-addressed store for agent traces
+      chips: [S3 or local, packs + catalog, byte budget, search index]
+      say: "traceDB: a fast, byte budgeted, content addressed store for agent traces and research data, on S3 or a local directory. This is a short tour of how it works, what we measured, and what is still unmeasured."
+    - type: problem
+      heading: The problem
+      bullets:
+        - "Agent sessions produce huge numbers of small files, plus a few multi-gigabyte ones"
+        - "One object per file on S3 means one request per file, and slow listing"
+        - "An agent that reads a whole log blows its context and the network"
+      say: "Agents leave behind a lot of data. Thousands of small trace files, and now and then a log that is gigabytes long. Storing one S3 object per file means one request per file, and listings are slow. And an agent that reads a whole log by mistake wastes both its context window and the network."
+    - type: architecture
+      diagram: flow
+      heading: "The layout: packs, segments, and one mutable pointer"
+      say: "The layout has three kinds of object. Packs are immutable, around thirty two mebibytes, made of one mebibyte blocks that are compressed independently. Segments are immutable catalog deltas that say which path lives in which pack at which offset. And a single small HEAD file lists the segments. HEAD is the only thing that ever changes, and it is updated with compare and swap."
+    - type: cards
+      heading: "Safe by construction"
+      cards:
+        - {title: "Crash-safe writes", sub: "packs, then segment, then HEAD", lines: ["A crash before the swap leaves invisible orphans", "Retrying identical content is a no-op"]}
+        - {title: "Concurrent writers", sub: "compare-and-swap on HEAD", lines: ["{{ n.writers }} writers on real S3 lost nothing", "{{ n.writer_entries }} of {{ n.writer_entries }} entries present"]}
+        - {title: "Byte budget", sub: "default 8 MiB per read", lines: ["Over budget raises with a plan", "Plan shows bytes and requests before any fetch"]}
+      footer: "Reads touch only the 1 MiB blocks they need: head, tail and range reads never fetch the whole file"
+      say: "Writes are crash safe. Packs are written first, then the segment, then the HEAD swap, so a crash leaves only invisible orphans. Concurrent writers never block each other: on real S3, {{ n.writers }} concurrent writers lost nothing. And every read has a byte budget, eight mebibytes by default. A read over budget fails with a plan that shows the bytes and requests it would have cost."
+    - type: terminal
+      heading: "Using it"
+      lines:
+        - {cmd: "export TRACEDB_STORE=s3://bucket/prefix"}
+        - {cmd: "tracedb put ./logs --prefix logs/"}
+        - {out: "packed into content-addressed packs"}
+        - {cmd: "tracedb plan logs/x/y.jsonl"}
+        - {out: "raw / wire bytes and request count, no fetch"}
+        - {cmd: "tracedb get logs/x/y.jsonl --head 4096"}
+        - {out: "first 4 KiB only, one 1 MiB block touched"}
+      say: "Using it is simple. Point it at a bucket prefix or a local directory, put a folder, then plan a read to see its cost without fetching anything, and get just the first four kilobytes of a file."
+    - type: stat
+      number: wire_pct
+      kicker: "{{ n.files.text }} files, {{ n.raw_mib.text }}, packed into {{ n.packs.text }} packs"
+      label: of the raw bytes on the wire
+      sub: "real agent traces and repo data, compressed blockwise"
+      say: "On real agent trace and repository data, {{ n.files.numtext }} files and {{ n.raw_mib.numtext }} became {{ n.packs.numtext }} packs, at {{ n.wire_pct.numtext }} percent of the raw size."
+    - type: chart
+      chart: pulls
+      gif: video/pulls.gif
+      gif_start: 0.4
+      gif_end: 9
+      gif_width: 900
+      gif_fps: 10
+      say: "Here are real S3 pulls from a laptop, where each round trip is about seventy milliseconds. One small file takes {{ n.p1_ms.numtext }} milliseconds, which is one round trip. Five large files, {{ n.big_raw.numtext }} mebibytes of raw data, take {{ n.big_ms.numtext }} milliseconds in {{ n.big_reqs.numtext }} requests. A thousand random small files take {{ n.p1000_ms.numtext }} milliseconds."
+    - type: chart
+      chart: sweep
+      say: "Random small files were the hard case, so we swept two settings: how large a gap between ranges may be coalesced, and how many parallel workers. The earlier setting took {{ n.sw_before.numtext }} milliseconds with {{ n.sw_amp_before.numtext }} times read amplification. The new defaults, sixty four workers and a sixty four kilobyte gap, take {{ n.sw_after.numtext }} milliseconds at {{ n.sw_amp_after.numtext }} times amplification."
+    - type: chart
+      chart: append
+      say: "Agent sessions grow by appending. When new bytes start with the stored bytes, traceDB stores only the tail as a new extent. On the local backend, appending a hundred kilobytes to a forty mebibyte session adds about {{ n.app_kib.numtext }} kibibytes of pack, instead of re storing the whole file. That is roughly {{ n.app_ratio.numtext }} times less, in about {{ n.app_ms.numtext }} milliseconds per put."
+    - type: chart
+      chart: index_size
+      say: "Search is built from the store itself. The version three index is sharded, uses contentless full text search, and dedupes repeated text. On the real store it shrank from {{ n.idx_old_gb.numtext }} gigabytes to {{ n.idx_new_gb.numtext }}, a {{ n.idx_shrink.numtext }} times reduction. A cold first search takes {{ n.idx_cold.numtext }} seconds, against about {{ n.idx_old_cold.numtext }} minutes before."
+    - type: caveats
+      heading: "Honest caveats"
+      bullets:
+        - "S3 numbers are from a laptop, so round trip time dominates; in-region runs are still to do"
+        - "Recall against the old index is {{ n.idx_recall.text }} at ten, on a store that grew by half since"
+        - "Edited, non-prefix files are stored whole; no history API yet"
+        - "Several benchmarks ran on a loaded machine"
+      say: "Some honest caveats. The S3 numbers come from a laptop, so network round trips dominate, and an in region benchmark is still to do. Recall of the new search index against the old one is {{ n.idx_recall.text }} at ten, on a store that has since grown by half. Files that are edited rather than appended are stored whole, and there is no history API yet."
+    - type: end
+      title: traceDB
+      subtitle: "Pairs with ontolagni: it says where, traceDB fetches"
+      say: "traceDB. The code, the design notes and every benchmark file are in the repo."
+
+tables:
+  - id: pulls_tbl
+    title: "Real S3 pulls from a laptop (us-east-1, about 70 ms round trip)"
+    file: bench/results/derived/readme_data.json
+    rows_path: s3_pulls
+    columns:
+      - {key: what, title: Access pattern}
+      - {key: files, title: Files, align: right}
+      - {key: raw_mib, title: Raw MiB, align: right, fmt: "{:.1f}"}
+      - {key: wire_mib, title: Wire MiB, align: right, fmt: "{:.1f}"}
+      - {key: reqs, title: Requests, align: right}
+      - {key: ms, title: Time, align: right, fmt: "{:,.0f}", unit: " ms"}
+  - id: sweep_tbl
+    title: "1000 random small files: coalescing gap by parallel workers"
+    file: bench/results/derived/readme_data.json
+    rows_path: sweep
+    highlight: ["64K", "64 workers"]
+    columns:
+      - {key: gap, title: Coalesce gap}
+      - {key: workers, title: Workers}
+      - {key: reqs, title: Requests, align: right}
+      - {key: amp, title: Read amplification, align: right, fmt: "{:.1f}", unit: "x"}
+      - {key: ms, title: Time, align: right, fmt: "{:,.0f}", unit: " ms"}
+
+charts:
+  - id: pulls
+    type: bar
+    title: "S3 pull time by access pattern (ms, lower is better)"
+    subtitle: "laptop to us-east-1; every row is one real measurement"
+    better: lower
+    file: bench/results/derived/readme_data.json
+    rows_path: s3_pulls
+    label: what
+    y: ms
+    unit: " ms"
+    fmt: "{:,.0f}"
+  - id: sweep
+    type: gbar
+    title: "1000 random small files: time by coalescing gap (ms)"
+    subtitle: "16 versus 64 parallel workers; wire amplification rises with the gap"
+    better: lower
+    file: bench/results/derived/readme_data.json
+    rows_path: sweep
+    cat: gap
+    series: workers
+    y: ms
+    fmt: "{:,.0f}"
+  - id: append
+    type: bar
+    title: "Pack bytes added by one 100 KiB append (KiB, lower is better)"
+    subtitle: "40 MiB session, local backend; extents store only the new tail"
+    better: lower
+    file: bench/results/derived/readme_data.json
+    rows_path: append_rows
+    label: what
+    y: kib
+    unit: " KiB"
+    fmt: "{:,.0f}"
+    highlight: "append 100 KiB tail (extent)"
+  - id: index_size
+    type: bar
+    title: "Search index size on the real store (GB, lower is better)"
+    subtitle: "v1 single sqlite file versus v3 sharded contentless FTS5"
+    better: lower
+    file: bench/results/derived/readme_data.json
+    rows_path: index_size
+    label: index
+    y: gb
+    unit: " GB"
+    fmt: "{:.2f}"
+    highlight: "v3 (sharded, contentless FTS5)"
+
+diagrams:
+  - id: flow
+    title: "Write path and read path"
+    nodes:
+      - {id: src, label: "files / appends", sub: "logs, traces, repos", col: 0, row: 0, kind: io}
+      - {id: pack, label: "packs/<sha>.pack", sub: "immutable, 1 MiB blocks, compressed", col: 1, row: 0, kind: store}
+      - {id: seg, label: "segments/<sha>.seg", sub: "immutable catalog delta", col: 2, row: 0, kind: store}
+      - {id: head, label: HEAD, sub: "list of segments, updated by CAS", col: 3, row: 0, kind: accent}
+      - {id: cat, label: "local SQLite catalog", sub: "rebuilt from segments; lookup in microseconds", col: 3, row: 1}
+      - {id: plan, label: "plan + budget", sub: "bytes and requests, no fetch", col: 2, row: 1}
+      - {id: read, label: "read_many", sub: "coalesced ranges, parallel, disk cache", col: 1, row: 1}
+      - {id: agent, label: "agent", sub: "gets only the blocks it needs", col: 0, row: 1, kind: io}
+    edges:
+      - {from: src, to: pack, label: "1. create-only PUT"}
+      - {from: pack, to: seg, label: "2. create-only PUT"}
+      - {from: seg, to: head, label: "3. CAS"}
+      - {from: head, to: cat, label: sync}
+      - {from: cat, to: plan}
+      - {from: plan, to: read}
+      - {from: read, to: agent}
+
+sections:
+  - title: Quick use
+    emoji: "🚀"
+    id: quick-use
+    body: |
+      ```bash
+      export TRACEDB_STORE=s3://bucket/prefix      # or a local dir
+      tracedb put ./logs --prefix logs/
+      tracedb locate logs/x/y.jsonl
+      tracedb plan logs/x/y.jsonl                  # cost, no fetch
+      tracedb get logs/x/y.jsonl --head 4096       # budgeted (default 8 MiB cap)
+      ```
+      {{ n.cli_cmds.text }} subcommands: `put sync locate ls summary plan get verify compact gc export-catalog blob-put blob-get blob-info search index ...` (see `tracedb --help`).
+      Pure standard library; `boto3` (S3), `zstandard` and `apsw` (lazy index reads) are optional extras.
+  - title: Results
+    emoji: "📊"
+    id: results
+    body: "All numbers are parsed from the files in [`bench/results/`](bench/results) by [`tools/readme_data.py`](tools/readme_data.py). S3 runs are from a laptop, so about 70 ms of every number is network round trip."
+    highlights:
+      - {label: "Files packed", number: files}
+      - {label: "Wire size vs raw", number: wire_pct}
+      - {label: "One-file S3 read", number: p1_ms}
+      - {label: "No-change sync (one HEAD GET)", number: head_ms}
+      - {label: "Append vs re-store", number: app_ratio}
+      - {label: "Index shrink", number: idx_shrink}
+    charts: [pulls, sweep]
+    images:
+      - {src: video/preview.gif, alt: "animated overview of the explainer video", width: "70%"}
+    tables: [pulls_tbl, sweep_tbl]
+    after: |
+      Whole-directory pulls (what ontolagni points at) cost **one request**. The conditional create-only PUT and the HEAD compare-and-swap were checked on real S3
+      (a stale etag is refused); {{ n.writers }} concurrent writers lost nothing and a full verify passed. The cold catalog sync of {{ n.files.text }} entries took {{ n.cold_sync_s.text }}.
+  - title: Append-only growth
+    emoji: "📈"
+    id: append
+    body: |
+      An entry is a list of extents laid end to end. When a `put` of a path starts with the stored bytes, only the tail is encoded and stored as a new extent.
+      {{ n.app_base.text }} session plus ten 100 KiB appends adds about {{ n.app_kib.text }} of pack per append, against {{ n.app_whole_mib.text }} to re-store the whole file ({{ n.app_ratio.text }} less), about {{ n.app_ms.text }} per put (local backend).
+    charts: [append]
+  - title: How it works
+    emoji: "🧩"
+    id: how-it-works
+    body: "Immutable packs and segments plus one compare-and-swap pointer. Writers never block each other; a CAS loser re-reads HEAD and appends its segment."
+    diagrams: [flow]
+    details:
+      - summary: Read path in four steps
+        body: |
+          1. Local SQLite catalog, rebuilt from segments; `sync` is one HEAD GET plus any unseen segments.
+          2. `plan` computes raw bytes, wire bytes and requests with zero fetches.
+          3. `read_many` coalesces ranges, fetches in parallel, caches ranges on disk and decompresses only the blocks needed.
+          4. Every read is capped (default 8 MiB, `TRACEDB_MAX_BYTES`); over budget raises `BudgetExceeded` with the plan.
+      - summary: What was taken from all-git, and what was dropped
+        body: "Took: immutable content-addressed packs with a separate index, create-only and CAS ordering, ranged reads with coalescing, content-keyed cache, compaction from day one. Dropped: sharded manifest and 2PC, locks and merge zones, delta packs, hand-rolled SigV4. Full notes in [DESIGN.md](DESIGN.md)."
+  - title: Search index v3
+    emoji: "🔎"
+    id: search-index
+    body: |
+      `tracedb index build|update|stats` and `tracedb search` build a sharded, contentless FTS5 index *from the store* (not from local source directories), so it always matches what `tracedb get` returns.
+      Repeated long values are indexed once; `update` adds a delta generation with tombstones; a `--prefix` is an index range scan.
+      On the real store the index went from **{{ n.idx_old_gb.text }} to {{ n.idx_new_gb.text }}** ({{ n.idx_shrink.text }} smaller, {{ n.idx_chunks.text }} chunks); a cold first search takes {{ n.idx_cold.text }} (it was about {{ n.idx_old_cold.text }}), warm search without snippets about {{ n.idx_warm.text }} p50.
+      Recall@10 against the old index is {{ n.idx_recall.text }} (measured on a store that grew by half in between); details in `bench/results/opt-20261111.txt`.
+    charts: [index_size]
+quickstart:
+  - title: Install and run the tests
+    shell: |
+      pip install -e '.[s3,zstd,test]'
+      python3 -m pytest -q
+  - title: Regenerate this README and video
+    shell: |
+      python3 tools/readme_data.py
+      python3 ~/video-readme-maker/vrm.py all README.spec.yml
+caveats:
+  - "S3 numbers come from a laptop, about 70 ms RTT; a benchmark from inside AWS in the same region is still to do."
+  - "Several runs happened on a loaded machine, so absolute timings vary run to run (the ingest time of a later rerun was much slower than the first)."
+  - "Edited (non-prefix) files are stored whole; path overwrite means latest segment wins, with no history API yet."
+  - "Concurrent appenders to the same path: last committed row wins, the other tail is not merged."
+  - "GC is dry-run by default and grace-protected; the touch() race fix is untested on real S3 for the self-copy case, so run GC rarely."
+  - "Search recall against the previous index is {{ n.idx_recall.text }} at ten on the full store (many queries tie and fall back to OR)."
+repo_map:
+  - {path: tracedb/, desc: "the library and `tracedb` CLI (store, backend, codec, gc, index, search, blob)"}
+  - {path: tests/, desc: "pytest suite: store, crash safety, append extents, gc and cache, index, search, blobs"}
+  - {path: bench/, desc: "benchmarks (real S3, local, append, index) and their saved outputs"}
+  - {path: bench/results/, desc: "the measured result files every number here is parsed from"}
+  - {path: tools/, desc: "ingest, auto-sync, repo restore and harvest scripts; readme_data.py derives README numbers"}
+  - {path: DESIGN.md, desc: "full design notes and the measured gaps"}
+  - {path: README.spec.yml, desc: "drives the README and the video"}
+  - {path: video/, desc: "explainer mp4, poster, preview gif, subtitles", generated: true}
+  - {path: assets/, desc: "generated hero and chart SVGs", generated: true}
+footer: "Generated with [video-readme-maker](https://github.com/Bobliuuu/video-readme-maker)."

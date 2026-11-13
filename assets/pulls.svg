@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 416" width="980" height="416" role="img" aria-label="S3 pull time by access pattern (ms, lower is better)">
+<rect width="980" height="416" rx="16" fill="#0b0f17"/>
+<text x="32" y="44" font-family="ui-sans-serif,system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif" font-weight="700" font-size="22" fill="#e6edf6">S3 pull time by access pattern (ms, lower is better)</text>
+<text x="32" y="68" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="14" fill="#8a98ad">laptop to us-east-1; every row is one real measurement</text>
+<text x="144" y="118" text-anchor="end" font-family="ui-sans-serif,system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif" font-size="15" fill="#8a98ad" font-weight="400">1 small file</text>
+<rect x="158" y="96" width="81.7" height="30" rx="6" fill="#263044"/>
+<text x="249.7" y="117" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="15" font-weight="700" fill="#e6edf6">170 ms</text>
+<text x="144" y="164" text-anchor="end" font-family="ui-sans-serif,system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif" font-size="15" fill="#8a98ad" font-weight="400">10 small</text>
+<rect x="158" y="142" width="164.8" height="30" rx="6" fill="#263044"/>
+<text x="332.8" y="163" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="15" font-weight="700" fill="#e6edf6">343 ms</text>
+<text x="144" y="210" text-anchor="end" font-family="ui-sans-serif,system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif" font-size="15" fill="#8a98ad" font-weight="400">100 small</text>
+<rect x="158" y="188" width="367.9" height="30" rx="6" fill="#263044"/>
+<text x="535.9" y="209" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="15" font-weight="700" fill="#e6edf6">766 ms</text>
+<text x="144" y="256" text-anchor="end" font-family="ui-sans-serif,system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif" font-size="15" fill="#8a98ad" font-weight="400">1000 small</text>
+<rect x="158" y="234" width="672.0" height="30" rx="6" fill="#263044"/>
+<text x="840.0" y="255" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="15" font-weight="700" fill="#e6edf6">1,399 ms</text>
+<text x="144" y="302" text-anchor="end" font-family="ui-sans-serif,system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif" font-size="15" fill="#8a98ad" font-weight="400">20 mid(64K-1M)</text>
+<rect x="158" y="280" width="70.1" height="30" rx="6" fill="#263044"/>
+<text x="238.1" y="301" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="15" font-weight="700" fill="#e6edf6">146 ms</text>
+<text x="144" y="348" text-anchor="end" font-family="ui-sans-serif,system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif" font-size="15" fill="#8a98ad" font-weight="400">5 big(&gt;2M)</text>
+<rect x="158" y="326" width="51.9" height="30" rx="6" fill="#263044"/>
+<text x="219.9" y="347" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="15" font-weight="700" fill="#e6edf6">108 ms</text>
+<text x="948" y="402" text-anchor="end" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" fill="#8a98ad">source: bench/results/derived/readme_data.json · lower is better</text>
+</svg>

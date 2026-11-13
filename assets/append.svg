@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 232" width="980" height="232" role="img" aria-label="Pack bytes added by one 100 KiB append (KiB, lower is better)">
+<rect width="980" height="232" rx="16" fill="#0b0f17"/>
+<text x="32" y="44" font-family="ui-sans-serif,system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif" font-weight="700" font-size="22" fill="#e6edf6">Pack bytes added by one 100 KiB append (KiB, lower is better)</text>
+<text x="32" y="68" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="14" fill="#8a98ad">40 MiB session, local backend; extents store only the new tail</text>
+<text x="270" y="118" text-anchor="end" font-family="ui-sans-serif,system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif" font-size="15" fill="#e6edf6" font-weight="700">append 100 KiB tail (extent)</text>
+<rect x="284" y="96" width="2.0" height="30" rx="6" fill="#27c8e8"/>
+<text x="296.0" y="117" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="15" font-weight="700" fill="#e6edf6">49 KiB</text>
+<text x="270" y="164" text-anchor="end" font-family="ui-sans-serif,system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif" font-size="15" fill="#8a98ad" font-weight="400">re-store whole file</text>
+<rect x="284" y="142" width="546.0" height="30" rx="6" fill="#263044"/>
+<text x="840.0" y="163" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="15" font-weight="700" fill="#e6edf6">20,316 KiB</text>
+<text x="948" y="218" text-anchor="end" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" fill="#8a98ad">source: bench/results/derived/readme_data.json · lower is better</text>
+</svg>

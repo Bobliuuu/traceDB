@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 360" width="1200" height="360" role="img" aria-label="traceDB: agents get the bytes they asked for, and never more">
+<defs>
+<linearGradient id="g" x1="0" x2="1"><stop offset="0" stop-color="#27c8e8"/><stop offset=".55" stop-color="#ff6b6b"/><stop offset="1" stop-color="#f2c14e"/></linearGradient>
+<radialGradient id="glow"><stop offset="0" stop-color="#27c8e8" stop-opacity=".35"/><stop offset="1" stop-color="#27c8e8" stop-opacity="0"/></radialGradient>
+<pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M40 0H0V40" fill="none" stroke="#263044" stroke-width="1" opacity=".55"/></pattern>
+<linearGradient id="sweep" x1="0" x2="1"><stop offset="0" stop-color="#27c8e8" stop-opacity="0"/><stop offset=".5" stop-color="#27c8e8" stop-opacity=".4"/><stop offset="1" stop-color="#27c8e8" stop-opacity="0"/></linearGradient>
+</defs>
+<rect width="1200" height="360" rx="18" fill="#0b0f17"/><rect width="1200" height="360" rx="18" fill="url(#grid)"/>
+<circle cx="1030" cy="70" r="260" fill="url(#glow)"/>
+<rect y="0" width="260" height="360" fill="url(#sweep)" opacity=".5"><animateTransform attributeName="transform" type="translate" from="-300 0" to="1300 0" dur="7s" repeatCount="indefinite"/></rect>
+<text x="64" y="176" font-family="ui-sans-serif,system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif" font-weight="800" font-size="68" letter-spacing="-1" fill="url(#g)">traceDB</text>
+<text x="70" y="232" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="26" fill="#e6edf6">agents get the bytes they asked for, and never more</text>
+<g font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="17"><text x="70" y="290" fill="#27c8e8">● content-addressed</text><text x="297" y="290" fill="#ff6b6b">● byte budget</text><text x="458" y="290" fill="#f2c14e">● S3 or local</text><text x="619" y="290" fill="#27c8e8">● zero dependencies</text></g>
+<rect x="64" y="318" width="1072" height="3" rx="1.5" fill="url(#g)" opacity=".8"/>
+</svg>

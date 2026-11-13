@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1550 408" width="1550" height="408" role="img" aria-label="Write path and read path">
+<defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#8a98ad"/></marker></defs>
+<rect width="1550" height="408" rx="16" fill="#0b0f17"/>
+<text x="40" y="42" font-family="ui-sans-serif,system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif" font-weight="700" font-size="22" fill="#e6edf6">Write path and read path</text>
+<polyline points="310,132 375,132 375,132 440,132" fill="none" stroke="#8a98ad" stroke-width="2.2" marker-end="url(#ah)"/>
+<text x="375" y="124" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#8a98ad">1. create-only PUT</text>
+<polyline points="710,132 775,132 775,132 840,132" fill="none" stroke="#8a98ad" stroke-width="2.2" marker-end="url(#ah)"/>
+<text x="775" y="124" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#8a98ad">2. create-only PUT</text>
+<polyline points="1110,132 1175,132 1175,132 1240,132" fill="none" stroke="#8a98ad" stroke-width="2.2" marker-end="url(#ah)"/>
+<text x="1175" y="124" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#8a98ad">3. CAS</text>
+<polyline points="1375,184 1375,264" fill="none" stroke="#8a98ad" stroke-width="2.2" marker-end="url(#ah)"/>
+<text x="1375" y="216" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#8a98ad">sync</text>
+<polyline points="1240,316 1175,316 1175,316 1110,316" fill="none" stroke="#8a98ad" stroke-width="2.2" marker-end="url(#ah)"/>
+<polyline points="840,316 775,316 775,316 710,316" fill="none" stroke="#8a98ad" stroke-width="2.2" marker-end="url(#ah)"/>
+<polyline points="440,316 375,316 375,316 310,316" fill="none" stroke="#8a98ad" stroke-width="2.2" marker-end="url(#ah)"/>
+<rect x="40" y="80" width="270" height="104" rx="12" fill="#131a26" stroke="#3ddc97" stroke-width="2"/>
+<text x="175.0" y="118" text-anchor="middle" font-family="ui-sans-serif,system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif" font-weight="700" font-size="19" fill="#e6edf6">files / appends</text>
+<text x="175.0" y="142" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#8a98ad">logs, traces, repos</text>
+<rect x="440" y="80" width="270" height="104" rx="12" fill="#131a26" stroke="#f2c14e" stroke-width="2"/>
+<text x="575.0" y="118" text-anchor="middle" font-family="ui-sans-serif,system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif" font-weight="700" font-size="19" fill="#e6edf6">packs/&lt;sha&gt;.pack</text>
+<text x="575.0" y="142" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#8a98ad">immutable, 1 MiB blocks,</text>
+<text x="575.0" y="160" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#8a98ad">compressed</text>
+<rect x="840" y="80" width="270" height="104" rx="12" fill="#131a26" stroke="#f2c14e" stroke-width="2"/>
+<text x="975.0" y="118" text-anchor="middle" font-family="ui-sans-serif,system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif" font-weight="700" font-size="19" fill="#e6edf6">segments/&lt;sha&gt;.seg</text>
+<text x="975.0" y="142" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#8a98ad">immutable catalog delta</text>
+<rect x="1240" y="80" width="270" height="104" rx="12" fill="#131a26" stroke="#ff6b6b" stroke-width="2"/>
+<text x="1375.0" y="118" text-anchor="middle" font-family="ui-sans-serif,system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif" font-weight="700" font-size="19" fill="#e6edf6">HEAD</text>
+<text x="1375.0" y="142" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#8a98ad">list of segments, updated by CAS</text>
+<rect x="1240" y="264" width="270" height="104" rx="12" fill="#131a26" stroke="#27c8e8" stroke-width="2"/>
+<text x="1375.0" y="302" text-anchor="middle" font-family="ui-sans-serif,system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif" font-weight="700" font-size="19" fill="#e6edf6">local SQLite catalog</text>
+<text x="1375.0" y="326" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#8a98ad">rebuilt from segments; lookup in</text>
+<text x="1375.0" y="344" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#8a98ad">microseconds</text>
+<rect x="840" y="264" width="270" height="104" rx="12" fill="#131a26" stroke="#27c8e8" stroke-width="2"/>
+<text x="975.0" y="302" text-anchor="middle" font-family="ui-sans-serif,system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif" font-weight="700" font-size="19" fill="#e6edf6">plan + budget</text>
+<text x="975.0" y="326" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#8a98ad">bytes and requests, no fetch</text>
+<rect x="440" y="264" width="270" height="104" rx="12" fill="#131a26" stroke="#27c8e8" stroke-width="2"/>
+<text x="575.0" y="302" text-anchor="middle" font-family="ui-sans-serif,system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif" font-weight="700" font-size="19" fill="#e6edf6">read_many</text>
+<text x="575.0" y="326" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#8a98ad">coalesced ranges, parallel, disk</text>
+<text x="575.0" y="344" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#8a98ad">cache</text>
+<rect x="40" y="264" width="270" height="104" rx="12" fill="#131a26" stroke="#3ddc97" stroke-width="2"/>
+<text x="175.0" y="302" text-anchor="middle" font-family="ui-sans-serif,system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif" font-weight="700" font-size="19" fill="#e6edf6">agent</text>
+<text x="175.0" y="326" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#8a98ad">gets only the blocks it needs</text>
+</svg>
