@@ -187,7 +187,8 @@ step "10 skills pull"
 
 step "11 ontology -> ${ONTOLOGY_DIR:-$HOME/ontology}"
 O=${ONTOLOGY_DIR:-$HOME/ontology}; mkdir -p "$O"
-aws s3 sync "${TRACEDB_STORE%/*}/ontology/" "$O/" --only-show-errors --exclude 'catalog.jsonl.gz'
+CANON=${ONTOLOGY_DESTS:-${TRACEDB_STORE%/*}/ontology/}; CANON=${CANON%% *}   # first destination is canonical
+aws s3 sync "$CANON" "$O/" --only-show-errors --exclude 'catalog.jsonl.gz' --exclude 'overlays/*'
 ONTOLOGY_DIR="$O" "$HOME/.local/bin/ontolagni" --dir "$O" find skills --limit 3 | head -c 300; echo
 
 step "12 boxes"

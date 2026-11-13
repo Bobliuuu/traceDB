@@ -46,7 +46,7 @@ What the ontology lists and how each kind is installed:
 | ~/.claude/CLAUDE.md, settings.json, memory (re-keyed to this machine's home) | vault `keys/files/.claude/...` | `keys pull` |
 | skills (every variant from every repo) | main `skills/MANIFEST.json` + `skills/<name>/<variant>/` | `skills pull` (user set) |
 | boxes (hardware, status, notes) | main `config/boxes.json` | read only; `keys boxes probe --publish` refreshes |
-| ontology | `{BUCKET}/ontology/` | bootstrap step 11 |
+| ontology | canonical `{CANON}`; mirrors: {MIRRORS} (`ONTOLOGY_DESTS`, first = canonical) | bootstrap step 11 syncs canonical to ~/ontology |
 
 After the bootstrap, start a NEW Claude Code session so the restored skills, CLAUDE.md and memory load.
 
@@ -59,6 +59,8 @@ After the bootstrap, start a NEW Claude Code session so the restored skills, CLA
   authorized_keys when it is created. `keys doctor` lists boxes that do not accept it yet.
 - New or changed box: edit ~/.ssh/config, check `ssh -G <alias>`, `keys push`, `keys boxes probe --publish <alias>`,
   then `bash ~/code/traceDB/tools/rebuild_ontology.sh` (merges, never clobbers other writers' nodes).
+- Tools that add nodes (rsi, policy, push-boxes, ...) use `ontolagni overlay <nodes.jsonl> --name <writer>`: it writes every
+  destination in `$ONTOLOGY_DESTS` with compare-and-swap, canonical first. Never `aws s3 cp` over ontology.jsonl.
 - Other vault prefixes (`home/ssh/`, `home/...`) are snapshots written by machine auto-syncs. `keys pull` never reads them;
   `keys status` tells you when a snapshot has a key or a Host the canonical copy lacks.
 

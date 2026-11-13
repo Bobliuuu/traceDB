@@ -15,7 +15,7 @@ T=${TRACEDB_VENV:-$HOME/tracedb-work/venv}/bin/tracedb
 S=$(mktemp -d); trap 'rm -rf "$S"' EXIT
 mkdir -p "$S/setup/src"
 sed -e "s#{SETUP_S3}#$SETUP_S3#g" -e "s#{TRACEDB_STORE}#$TRACEDB_STORE#g" -e "s#{VAULT_STORE}#$VAULT_STORE#g" \
-    -e "s#{BUCKET}#${TRACEDB_STORE%/*}#g" -e "s#{PROFILE}#${AWS_PROFILE_LOGIN:-lab}#g" -e "s#{REGION}#${AWS_REGION:-us-east-1}#g" \
+    -e "s#{BUCKET}#${TRACEDB_STORE%/*}#g" -e "s#{CANON}#${ONTOLOGY_DESTS%% *}#g" -e "s#{MIRRORS}#$(echo "${ONTOLOGY_DESTS#* }" | sed 's/ /, /g')#g" -e "s#{PROFILE}#${AWS_PROFILE_LOGIN:-lab}#g" -e "s#{REGION}#${AWS_REGION:-us-east-1}#g" \
     "$HERE/SETUP.md.tmpl" > "$S/setup/SETUP.md"
 cp "$HERE/bootstrap.sh" "$S/setup/bootstrap.sh"
 grep -v '^AWS_PROFILE=lab-' ~/.config/tracedb/env > "$S/setup/bootstrap.env"
