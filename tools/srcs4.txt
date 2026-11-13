@@ -1,0 +1,8 @@
+/Users/jhome/Library/LaunchAgents=config/launchd/
+/Users/jhome/Desktop=config/desktop/
+/Users/jhome/Documents/GitHub/personal-website=repos/documents/GitHub/personal-website/
+/Users/jhome/.kvm_host_adaptive=config/home/
+/Users/jhome/.swarm-gate-tripped=config/home/
+/Users/jhome/.scratch-old=config/home-scratch-old/
+/Users/jhome/.ipython/profile_default/history.sqlite=config/ipython/
+/Users/jhome/tracedb-work/snap=config/system/
