@@ -150,6 +150,30 @@ python3 tools/readme_data.py
 python3 ~/video-readme-maker/vrm.py all README.spec.yml
 ```
 
+<a id="new-machine"></a>
+
+## 💻 New machine in one command
+
+One command turns a fresh laptop into a copy of every other machine: every SSH key, the ssh config (every box), every service credential, the Claude Code skills, global CLAUDE.md, settings and memory, and the ontology. Only the AWS sign-in is interactive.
+
+```bash
+aws login --profile lab                                    # or a Secrets Manager key: AWS_CRED_SOURCE=secret:<id>
+aws s3 cp s3://<bucket>/setup/bootstrap.sh /tmp/b.sh && bash /tmp/b.sh s3://<bucket>/setup
+```
+
+`<bucket>/setup/SETUP.md` is the entry point for an agent on a new machine: run the bootstrap, read the ontology, check that everything it lists is installed.
+The pieces (all in `tools/`, generic, no hosts or secrets in this repo):
+
+| tool | what |
+|---|---|
+| `bootstrap.sh` | AWS CLI and venv without sudo, both repos from git bundles in the store, `keys pull`, `skills pull`, ontology, box report. Idempotent; backs up what it replaces to `~/.keys-backup/` |
+| `keys.py` (`keys`) | canonical copy in the vault under `keys/` (`keys/MANIFEST.json`: dest, mode, sha256 per file). `status`, `pull`, `push`, `add`, `doctor` (per box: key, reachable, accepted key), `boxes probe` (read-only hardware/status probe into `config/boxes.json`) |
+| `skills.py` (`skills`) | every skill variant from `~/.claude/skills` and every repo under `skills/<name>/<variant>/` (secret-bearing files redacted; originals in the vault); the user set installs into `~/.claude/skills` |
+| `rebuild_ontology.sh` | rebuild + verify + publish the ontology from any machine (boxes registry, skills, other writers' overlays kept) |
+| `publish_setup.sh` | publish `SETUP.md`, `bootstrap.sh`, `bootstrap.env` and source bundles to `<bucket>/setup/` |
+
+Machine auto-syncs write snapshots (`home/ssh/`, ...) to the vault; only `keys` writes `keys/`, so a snapshot can never overwrite the canonical copy. `keys status` reports keys or Host aliases a snapshot has that the canonical copy lacks.
+
 <a id="caveats"></a>
 
 ## ⚠️ Honest caveats

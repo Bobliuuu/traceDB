@@ -1,0 +1,72 @@
+# SETUP.md: new machine, read this first
+
+You are an agent (or a person) on a machine that should become identical to every other machine of this user:
+same SSH keys and ssh config (every box), same service credentials, same Claude Code skills, global CLAUDE.md,
+settings and memory, same ontology. One script does all of it. Follow these steps in order and report what each printed.
+
+Rule 1 of this user applies here too: spend the least money possible (it is in the restored ~/.claude/CLAUDE.md).
+
+## 1. AWS CLI + login (the only human step)
+
+Linux/WSL, no sudo needed:
+
+    curl -fsSLo /tmp/awscli.zip "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip"
+    python3 -c "import zipfile,os;z=zipfile.ZipFile('/tmp/awscli.zip');[os.chmod(z.extract(i,'/tmp'),i.external_attr>>16&0o7777) for i in z.infolist()]"
+    /tmp/aws/install -i ~/.local/aws-cli -b ~/.local/bin --update
+    ~/.local/bin/aws configure set region {REGION} --profile {PROFILE}
+    ~/.local/bin/aws login --profile {PROFILE}          # browser sign-in; on a headless box add --remote
+
+macOS: `brew install awscli`, then the same `aws configure set` and `aws login` lines.
+If `aws sts get-caller-identity --profile {PROFILE}` already works, skip this section.
+
+## 2. Run the bootstrap
+
+    ~/.local/bin/aws s3 cp {SETUP_S3}/bootstrap.sh /tmp/bootstrap.sh --profile {PROFILE}
+    AWS_PROFILE={PROFILE} bash /tmp/bootstrap.sh {SETUP_S3}
+
+It is idempotent: re-run it any time, on any machine, and it converges to the same state. It backs up anything it
+replaces under ~/.keys-backup/<stamp>/. What it does, step by step, is in the header of the script.
+
+## 3. Read the ontology, then check that everything listed is installed
+
+    . ~/.config/tracedb/env
+    cat ~/ontology/AGENT.md                  # the protocol: ontolagni says where, traceDB fetches
+    ontolagni find skills                    # every saved skill; `U` ones are installed in ~/.claude/skills
+    ontolagni find boxes                     # every box: status, hardware, shell, key, route, notes
+    keys status                              # canonical keys/creds/Claude config vs this machine: all "in sync"
+    skills status                            # user skill set installed identically
+    keys doctor                              # every ssh alias: key present? reachable? accepted key?
+
+What the ontology lists and how each kind is installed:
+
+| what | source of truth | installed by |
+|---|---|---|
+| SSH keys, ~/.ssh/config, known_hosts | vault `keys/MANIFEST.json` + `keys/files/.ssh/*` | `keys pull` |
+| service credentials (AWS, Modal, HF, Vast, gcloud, netrc, OpenAI/OpenRouter, ...) | vault `keys/files/...` | `keys pull` |
+| ~/.claude/CLAUDE.md, settings.json, memory (re-keyed to this machine's home) | vault `keys/files/.claude/...` | `keys pull` |
+| skills (every variant from every repo) | main `skills/MANIFEST.json` + `skills/<name>/<variant>/` | `skills pull` (user set) |
+| boxes (hardware, status, notes) | main `config/boxes.json` | read only; `keys boxes probe --publish` refreshes |
+| ontology | `{BUCKET}/ontology/` | bootstrap step 11 |
+
+After the bootstrap, start a NEW Claude Code session so the restored skills, CLAUDE.md and memory load.
+
+## 4. Keeping every machine identical
+
+- This machine has something newer (a key, a credential, a memory note, a skill): `keys push` / `skills push`
+  (`keys add <file>` tracks a new credential file; `skills promote <name>` makes a skill user-level).
+  Then other machines get it with `keys pull` / `skills pull` (or just re-run the bootstrap).
+- One SSH key everywhere: `~/.ssh/id_ed25519_main` is offered first to every host. A new box gets its `.pub` in
+  authorized_keys when it is created. `keys doctor` lists boxes that do not accept it yet.
+- New or changed box: edit ~/.ssh/config, check `ssh -G <alias>`, `keys push`, `keys boxes probe --publish <alias>`,
+  then `bash ~/code/traceDB/tools/rebuild_ontology.sh` (merges, never clobbers other writers' nodes).
+- Other vault prefixes (`home/ssh/`, `home/...`) are snapshots written by machine auto-syncs. `keys pull` never reads them;
+  `keys status` tells you when a snapshot has a key or a Host the canonical copy lacks.
+
+## 5. Rules
+
+- Never print key or token contents: names, sizes, fingerprints only.
+- Never write to a remote box (authorized_keys included) without the user's explicit go-ahead. `keys doctor` and
+  `keys boxes probe` are read-only.
+- Never put secrets, IPs or hostnames in the public GitHub repos (traceDB, ontolagni). They live in the private stores.
+
+Stores: main `{TRACEDB_STORE}` (redacted), vault `{VAULT_STORE}` (KMS-encrypted originals). AWS profile `{PROFILE}`.

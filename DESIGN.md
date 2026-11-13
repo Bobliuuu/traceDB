@@ -48,6 +48,19 @@ verify and export keep extents. Measured (`bench/bench_append.py`, local): 40 Mi
 pack per append (vs ~19.8 MiB whole-file), ~50 ms per put.
 Concurrent appenders to the *same* path: last committed row wins (same as overwrite); the other tail is not merged.
 
+## Keys, credentials, skills and new machines (`tools/keys.py`, `tools/skills.py`, `tools/bootstrap.sh`)
+- Canonical secrets live in the vault store under `keys/`: `keys/MANIFEST.json` lists every file as {dest relative to $HOME, path, mode, sha256, size, kind}
+  and `keys/files/<dest>` holds the bytes. Restore is exact (sha-checked, modes set, replaced files backed up). Only the `keys` tool writes `keys/`;
+  machine auto-syncs keep writing snapshots under `home/...`, which restore never reads, so an older machine's snapshot cannot win.
+- Per-machine paths: Claude Code keys its project dirs by path (`/home/u` -> `-home-u`); the manifest stores `@HOMEKEY@` and each machine expands it.
+- known_hosts merges on pull (canonical wins per host, so a stale key removed on the pushing machine stays removed); everything else is byte-exact.
+- Skills: `skills/MANIFEST.json` in the main store, one variant per distinct content hash, each with its sources (repo, path, commit). Files that match
+  the ingest secret patterns are stored redacted in the main store and as originals in the vault at the same path.
+- Boxes: `config/boxes.json` (main store) is the registry: probed facts (status, accepted key, OS, CPU, RAM, GPU, remote shell) plus curated ones
+  (provider, purpose, lifecycle, notes). Probes are read-only (`ssh -n -o BatchMode=yes ... uname -s`, PowerShell via -EncodedCommand on Windows).
+- AWS credential source is pluggable: `aws login` (default) or a long-lived key in Secrets Manager (`AWS_CRED_SOURCE=secret:<id>`), written once to a
+  `<profile>-key` profile.
+
 ## Known gaps / next
 - Benchmark from inside AWS (same region): laptop RTT dominates the numbers above.
 - GC: `tracedb gc [--apply] [--grace S]` (dry-run default, grace-protected); block cache is LRU-bounded (default 2 GiB). GC race: a writer re-uploading identical content to an *old orphan* pack now refreshes its age via touch() (S3: self-copy; untested on real S3); still run GC rarely.
