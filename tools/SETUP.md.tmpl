@@ -31,7 +31,7 @@ replaces under ~/.keys-backup/<stamp>/. What it does, step by step, is in the he
 
     . ~/.config/tracedb/env
     cat ~/ontology/AGENT.md                  # the protocol: ontolagni says where, traceDB fetches
-    ontolagni find skills                    # every saved skill; `U` ones are installed in ~/.claude/skills
+    ontolagni find skills user installed --kind skill --limit 80   # every saved skill (user set first); table in ~/ontology/ONTOLOGY.md
     ontolagni find boxes                     # every box: status, hardware, shell, key, route, notes
     keys status                              # canonical keys/creds/Claude config vs this machine: all "in sync"
     skills status                            # user skill set installed identically
