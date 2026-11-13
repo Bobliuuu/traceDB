@@ -49,12 +49,27 @@ def _load_env():
 _load_env()
 
 
+_STORES = {}
+
+
 def _store(var):
+    if var in _STORES:
+        return _STORES[var]
     spec = os.environ.get(var)
     if not spec:
         sys.exit(f"keys: set {var} (or run bootstrap, which writes {ENV_FILE})")
     from tracedb.store import open_store
-    return open_store(spec)
+    st = open_store(spec)
+    st.sync()  # the local catalog may be empty or stale (fresh machine): reads only see what sync loaded
+    _STORES[var] = st
+    return st
+
+
+def read_or_none(st, path):
+    """Bytes of path, or None if the store has no such entry. Any other failure (auth, network) raises."""
+    if st.locate(path) is None:
+        return None
+    return st.read(path, max_bytes=1 << 30)
 
 
 _V = None
@@ -109,12 +124,8 @@ def default_mode(dest, local_mode=None):
 
 
 def manifest():
-    try:
-        return json.loads(vault().read(MANIFEST, max_bytes=1 << 26))
-    except Exception as e:  # first push
-        if "NotFound" in type(e).__name__ or "not found" in str(e).lower():
-            return {"version": 1, "files": []}
-        raise
+    b = read_or_none(vault(), MANIFEST)
+    return json.loads(b) if b is not None else {"version": 1, "files": []}  # None only before the first push
 
 
 def entries(m):
@@ -237,6 +248,8 @@ def _mkdirs(d):
 
 def pull(dry=False):
     m = manifest()
+    if not m["files"]:
+        sys.exit(f"keys pull: no canonical manifest {MANIFEST} in {os.environ['VAULT_STORE']} (run keys push on a set-up machine first)")
     stamp = time.strftime("%Y%m%dT%H%M%S")
     bk = os.path.join(HOME, ".keys-backup", stamp)
     n_new = n_upd = n_same = n_mode = 0
@@ -488,10 +501,8 @@ def _facts(alias):
 
 def registry_load(prefer_local=False):
     """The published registry; with prefer_local, an unpublished local copy that is newer wins (probe ALIAS... merges)."""
-    try:
-        reg = json.loads(_store("TRACEDB_STORE").read(REGISTRY, max_bytes=1 << 26))
-    except Exception:
-        reg = {"version": 1, "boxes": {}}
+    b = read_or_none(_store("TRACEDB_STORE"), REGISTRY)
+    reg = json.loads(b) if b is not None else {"version": 1, "boxes": {}}
     if prefer_local and os.path.exists(reg_path()):
         loc = json.load(open(reg_path()))
         if loc.get("updated", "") > reg.get("updated", ""):

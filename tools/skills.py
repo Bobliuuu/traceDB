@@ -118,10 +118,8 @@ def scan():
 
 
 def manifest():
-    try:
-        return json.loads(main_store().read(MAN, max_bytes=1 << 28))
-    except Exception:
-        return {"version": 1, "skills": {}}
+    b = K.read_or_none(main_store(), MAN)
+    return json.loads(b) if b is not None else {"version": 1, "skills": {}}  # None only before the first push
 
 
 def save(m, items_main, items_vault):
@@ -192,7 +190,10 @@ def installed_hash(name):
 
 
 def pull(dry=False):
-    m = manifest(); stamp = time.strftime("%Y%m%dT%H%M%S")
+    m = manifest()
+    if not m.get("skills"):
+        sys.exit(f"skills pull: no {MAN} in {os.environ['TRACEDB_STORE']} (run skills push on a set-up machine first)")
+    stamp = time.strftime("%Y%m%dT%H%M%S")
     bk = os.path.join(HOME, ".keys-backup", stamp, ".claude", "skills")
     done = same = 0
     for name, s in sorted(m.get("skills", {}).items()):
