@@ -570,25 +570,47 @@ def boxes_show(reg=None):
 
 
 # ------------------------------------------------------------------------------------------------ install (remote write)
+WIN_ADD = r"""$k = '__PUB__'; $out = @()
+$files = @("$env:USERPROFILE\.ssh\authorized_keys")
+$admin = (New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if ($admin) { $files += 'C:\ProgramData\ssh\administrators_authorized_keys' }
+foreach ($f in $files) {
+  if (-not (Test-Path $f)) { if ($f -like '*ProgramData*') { continue }; New-Item -ItemType Directory -Force (Split-Path $f) | Out-Null; New-Item -ItemType File $f | Out-Null }
+  if ((Get-Content $f) -contains $k) { $out += 'already' } else {
+    $t = [IO.File]::ReadAllText($f); if ($t.Length -gt 0 -and -not $t.EndsWith([string][char]10)) { [IO.File]::AppendAllText($f, "`r`n") }
+    [IO.File]::AppendAllText($f, $k + "`r`n"); $out += 'added' } }
+'win:' + ($out -join ',')"""
+
+
 def install(targets):
+    """Add the universal public key to each HOST's authorized_keys (idempotent), then VERIFY by logging in with it.
+    Linux/macOS: ~/.ssh/authorized_keys. Windows OpenSSH (cmd remote shell): %USERPROFILE%\.ssh\authorized_keys and, for
+    administrators, C:\ProgramData\ssh\administrators_authorized_keys (which file sshd reads depends on its sshd_config).
+    A host only counts as done when a login offering the universal key FIRST is accepted with it; restricted shells
+    (jump/git hosts whose account has no command shell) report as 'not accepted' instead of a false OK."""
     pub = open(os.path.join(HOME, MAIN_KEY + ".pub")).read().strip()
+    keyname = os.path.basename(MAIN_KEY)
     if targets == ["all"]: targets = aliases()
-    remote = (f"umask 077; mkdir -p ~/.ssh && touch ~/.ssh/authorized_keys && "
-              f"(grep -qxF '{pub}' ~/.ssh/authorized_keys && echo already || (echo '{pub}' >> ~/.ssh/authorized_keys && echo added))")
+    unix = (f"umask 077; mkdir -p ~/.ssh && touch ~/.ssh/authorized_keys && "
+            f"(grep -qxF '{pub}' ~/.ssh/authorized_keys && echo already || (echo '{pub}' >> ~/.ssh/authorized_keys && echo added))")
+    win = "powershell -NoProfile -NonInteractive -EncodedCommand " + base64.b64encode(WIN_ADD.replace("__PUB__", pub).encode("utf-16-le")).decode()
 
     def one(h):
-        try:
-            r = subprocess.run(ssh_base()[:-4] + [h, remote], capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL)
-            msg = (r.stdout.strip().splitlines() or [""])[-1] if r.returncode == 0 else \
-                ([l for l in r.stderr.strip().splitlines() if "Pseudo" not in l] or ["?"])[-1][:90]
-            return h, r.returncode == 0, msg
-        except subprocess.TimeoutExpired:
-            return h, False, "timeout"
+        p = probe(h, "uname -s")
+        if p["status"] != "alive": return h, False, f"unreachable: {p.get('detail', '')[:70]}"
+        if keyname in (p.get("accepted_key") or ""): return h, True, "already accepted"
+        is_unix = p["rc"] == 0 and p["out"].strip() != ""
+        q = probe(h, unix if is_unix else win, timeout=60)
+        did = (q["out"].strip().splitlines() or ["(no output: restricted shell?)"])[-1][:40]
+        v = probe(h, "exit")
+        if keyname in (v.get("accepted_key") or ""): return h, True, f"{did}; verified"
+        return h, False, f"{did}; NOT accepted with {keyname} (restricted shell or sshd reads another AuthorizedKeysFile)"
     with ThreadPoolExecutor(16) as ex:
         res = list(ex.map(one, targets))
     for h, ok, msg in sorted(res, key=lambda x: (not x[1], x[0])):
         print(f"{'OK  ' if ok else 'FAIL'}  {h}: {msg}")
-    print(f"{sum(r[1] for r in res)}/{len(res)} hosts have the key")
+    print(f"{sum(r[1] for r in res)}/{len(res)} hosts accept {keyname}")
+    return 0 if all(r[1] for r in res) else 2
 
 
 def main(a):
