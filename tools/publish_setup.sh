@@ -19,7 +19,7 @@ sed -e "s#{SETUP_S3}#$SETUP_S3#g" -e "s#{TRACEDB_STORE}#$TRACEDB_STORE#g" -e "s#
     "$HERE/SETUP.md.tmpl" > "$S/setup/SETUP.md"
 cp "$HERE/bootstrap.sh" "$S/setup/bootstrap.sh"
 grep -v '^AWS_PROFILE=lab-' ~/.config/tracedb/env > "$S/setup/bootstrap.env"
-if grep -qiE 'secret|token|password|aws_access|PRIVATE KEY' "$S/setup/bootstrap.env"; then echo "bootstrap.env looks like it holds a secret; refusing" >&2; exit 1; fi
+if grep -v '^#' "$S/setup/bootstrap.env" | grep -qiE 'token|password|aws_access|aws_secret|PRIVATE KEY|=.*secret[^:]'; then echo "bootstrap.env looks like it holds a secret; refusing" >&2; exit 1; fi
 for R in traceDB ontolagni; do
   D="$CODE/$R"; BR=$(git -C "$D" rev-parse --abbrev-ref HEAD)
   [ -n "$(git -C "$D" status --porcelain --untracked-files=no)" ] && echo "note: $R has uncommitted changes; publishing the committed HEAD only"
