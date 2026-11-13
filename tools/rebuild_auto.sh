@@ -57,19 +57,8 @@ a=json.load(open("describe.json")); b=json.load(open("describe-new.json"))
 for k,v in a.items(): b.setdefault(k,v)
 json.dump(b,open("describe.json","w"),indent=1)
 PY
-  venv/bin/ontolagni --dir ontology build catalog.jsonl --store "$TRACEDB_STORE" --describe describe.json \
-    --ssh-config ~/.ssh/config:config/ssh_config.txt \
-    --ssh-config stage/config/ssh_config.bak-csc.txt:config/ssh_config.bak-csc.txt \
-    --ssh-config stage/config/ssh_config.bak-lambda-final.txt:config/ssh_config.bak-lambda-final.txt \
-    --docs stage/config=config/ --max-depth 4
-  venv/bin/ontolagni --dir ontology verify catalog.jsonl
-  venv/bin/ontolagni --dir ontology render --out onto-out
-  venv/bin/ontolagni --dir ontology wiki --out onto-out/wiki
-  [ -f onto-out/VM_SETUP.md ] || aws s3 cp "s3://$BUCKET/ontology/VM_SETUP.md" onto-out/VM_SETUP.md || true  # file no longer exists; non-fatal
-  cp ontology/ontology.jsonl ontology/meta.json onto-out/
-  gzip -c catalog.jsonl > onto-out/catalog.jsonl.gz
-  aws s3 sync onto-out "s3://$BUCKET/ontology/"
-  $T put onto-out --prefix ontology/
+  # build + verify + CAS publish to every $ONTOLOGY_DESTS (box registry, skills, other writers' overlays kept)
+  DESCRIBE=$PWD/describe.json DOCS=$PWD/stage/config=config/ bash traceDB/tools/rebuild_ontology.sh
   # best effort: redeploy the human wiki on the wiki box via SSM (no inbound port)
   aws ssm send-command --region us-east-2 --instance-ids i-0c3596d24601850cf --document-name AWS-RunShellScript \
     --parameters "commands=[\"aws s3 cp s3://$BUCKET/ontology/wiki/index.html /srv/ontolagni-wiki/index.html\"]" --query Command.CommandId --output text || echo "wiki redeploy skipped"

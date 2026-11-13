@@ -9,7 +9,7 @@
 # Other writers (push-boxes, rsi, ...) add nodes with `ontolagni overlay <nodes.jsonl> --name <writer> --to s3://<bucket>/ontology/`;
 # their overlays/<writer>.jsonl files are re-applied by every publish, so a rebuild never drops them.
 # Config: ~/.config/tracedb/env (TRACEDB_STORE, VAULT_STORE, AWS_PROFILE). Work dir: $ONTO_WORK (default ~/tracedb-work/onto-build).
-# Env: NO_PUBLISH=1 builds and verifies only. Extra docs to publish next to the ontology: put them in $ONTO_WORK/extra/.
+# Env: NO_PUBLISH=1 builds and verifies only. DESCRIBE=describe.json (README summaries), DOCS=LOCALDIR=STOREPREFIX (box mentions). Extra docs to publish next to the ontology: put them in $ONTO_WORK/extra/.
 set -euo pipefail
 [ -f ~/.config/tracedb/env ] && { set -a; . ~/.config/tracedb/env; set +a; }
 : "${TRACEDB_STORE:?set TRACEDB_STORE}" "${VAULT_STORE:?set VAULT_STORE}"
@@ -39,7 +39,8 @@ SSHCFG=$(mktemp); chmod 600 "$SSHCFG"; trap 'rm -f "$SSHCFG"' EXIT
 step "4 build + verify"
 rm -rf ontology out; mkdir -p out
 "$O" --dir ontology build catalog.jsonl --store "$TRACEDB_STORE" --carry prev/ontology.jsonl \
-  --ssh-config "$SSHCFG:keys/files/.ssh/config" --boxes boxes.json:config/boxes.json --skills skills.json --max-depth 4
+  --ssh-config "$SSHCFG:keys/files/.ssh/config" --boxes boxes.json:config/boxes.json --skills skills.json --max-depth 4 \
+  ${DESCRIBE:+--describe "$DESCRIBE"} ${DOCS:+--docs "$DOCS"}
 "$O" --dir ontology verify catalog.jsonl
 "$O" --dir ontology render --out out          # local preview; publish re-renders with the overlays applied
 gzip -c catalog.jsonl > out/catalog.jsonl.gz
