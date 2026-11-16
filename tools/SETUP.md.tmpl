@@ -61,6 +61,12 @@ After the bootstrap, start a NEW Claude Code session so the restored skills, CLA
   then `bash ~/code/traceDB/tools/rebuild_ontology.sh` (merges, never clobbers other writers' nodes).
 - Tools that add nodes (rsi, policy, push-boxes, ...) use `ontolagni overlay <nodes.jsonl> --name <writer>`: it writes every
   destination in `$ONTOLOGY_DESTS` with compare-and-swap, canonical first. Never `aws s3 cp` over ontology.jsonl.
+- The vault never goes stale: exactly ONE machine (the user's main laptop) runs `tools/install_keys_push_timer.sh`, a
+  systemd user timer that runs `keys push` every 15 min. Every other machine only pulls (two writers would flap).
+- `keys pull` overwrites `~/.ssh/authorized_keys` with the vault copy: on a fresh box re-append `~/.ssh/id_ed25519_main.pub`.
+- Credentials: the vault's `~/.aws/credentials` holds a permanent service key, so after `keys pull` the usual profiles need
+  no `aws login`. Only IAM and Secrets Manager need a human MFA login. Details and the current machines/teams:
+  `ontolagni find ops` (the operations runbook; update a page in ~/tracedb-work/ops/ and run `tools/publish_ops.py`).
 - Other vault prefixes (`home/ssh/`, `home/...`) are snapshots written by machine auto-syncs. `keys pull` never reads them;
   `keys status` tells you when a snapshot has a key or a Host the canonical copy lacks.
 
