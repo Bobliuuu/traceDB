@@ -8,13 +8,15 @@ Read path: local catalog (SQLite, point lookup ~10-50us) -> coalesced ranged GET
 Every read is byte-budgeted so an agent can never accidentally pull a huge amount.
 """
 from __future__ import annotations
-import hashlib, json, os, sqlite3, threading, time, zlib
+import hashlib, json, logging, os, sqlite3, threading, time, zlib
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Iterable, Optional
 
 from .backend import Backend, CASConflict, LocalBackend, S3Backend
 from . import codec as C
+
+log = logging.getLogger("tracedb.store")
 
 PACK_TARGET = 32 << 20
 SEG_COMPACT_AT = 64
@@ -98,6 +100,18 @@ class _DB:
         with self._l:
             self._c.commit()
 
+    def rollback(self):
+        with self._l:
+            self._c.rollback()
+
+    def begin_write(self):
+        """Take the catalog's write lock now (BEGIN IMMEDIATE), waiting up to the connection's busy timeout for
+        another process to finish its write. A pending implicit transaction is committed first."""
+        with self._l:
+            if self._c.in_transaction:
+                self._c.commit()
+            self._c.execute("BEGIN IMMEDIATE")
+
 
 class Store:
     def __init__(self, backend: Backend, cache_dir: Optional[str] = None, name: str = "default",
@@ -111,7 +125,10 @@ class Store:
         self.cache_bytes = cache_bytes
         self._csize: Optional[int] = None  # running cache size; lazily initialised, persisted lazily
         self._cdirty = 0
-        self.db = _DB(sqlite3.connect(os.path.join(self.dir, "catalog.sqlite"), check_same_thread=False))
+        # Several processes share this catalog. A full rebuild after a compaction holds the write lock for a while, so a
+        # writer waits for it (busy timeout) instead of failing with "database is locked" after sqlite's default 5 s.
+        self.db = _DB(sqlite3.connect(os.path.join(self.dir, "catalog.sqlite"), check_same_thread=False,
+                                      timeout=float(os.environ.get("TRACEDB_LOCK_WAIT", 600))))
         cols = [r[1] for r in self.db.execute("PRAGMA table_info(entries)")]
         if cols and "exts" not in cols:  # catalog cache from before multi-extent: rebuildable from segments
             self.db.executescript("DROP TABLE entries; DROP TABLE segs;")
@@ -146,30 +163,58 @@ class Store:
         return self.sync()
 
     def sync(self) -> dict:
-        """Pull only segments we do not have. One HEAD GET when nothing changed."""
+        """Pull only segments we do not have. One HEAD GET when nothing changed.
+
+        Several processes share the catalog. Segments are downloaded and verified before the write lock is taken, and
+        what is missing is decided again under the lock, so a process that waited for another's sync (or its full
+        rebuild after a compaction) applies only what is still missing, usually nothing."""
         self._last_sync = time.time()
         with self._lock:
             ids = self._segment_ids()
-            have = {r[0] for r in self.db.execute("SELECT id FROM segs")}
-            if ids and not have.issubset(set(ids)):  # compaction replaced segments -> rebuild
-                self.db.execute("DELETE FROM entries"); self.db.execute("DELETE FROM segs")
-                have = set()
-            new = [i for i in ids if i not in have]
-            blobs = list(self._pool.map(lambda i: self.b.get(f"segments/{i}.seg"), new))
-            self.stats["requests"] += len(new) + 1
-            for i, blob in zip(new, blobs):
-                if _sha(blob) != i:
-                    raise IOError(f"segment {i} corrupt")
-                rows = [json.loads(l) for l in zlib.decompress(blob).splitlines()]
-                self._apply(rows)
-                self.db.execute("INSERT OR REPLACE INTO segs VALUES(?,?)", (i, ids.index(i)))  # another process may have synced it
-            self.db.commit()
+            plan = self._missing(ids)
+            if plan is None:
+                self._touch_stamp()
+                return {"segments": len(ids), "new": 0, "entries": self.count()}
+            blobs = self._fetch_segments(plan[1])
+            self.db.begin_write()
             try:
-                with open(self._stamp, "a"):
-                    os.utime(self._stamp)
-            except OSError:
-                pass
+                rebuild, new = self._missing(ids) or (False, [])
+                if rebuild:
+                    log.info("sync: compaction replaced segments, rebuilding catalog from %d segment(s)", len(ids))
+                    self.db.execute("DELETE FROM entries"); self.db.execute("DELETE FROM segs")
+                late = [i for i in new if i not in blobs]  # a plan built before another process's rebuild
+                blobs.update(self._fetch_segments(late))
+                for i in new:
+                    self._apply([json.loads(l) for l in zlib.decompress(blobs[i]).splitlines()])
+                    self.db.execute("INSERT OR REPLACE INTO segs VALUES(?,?)", (i, ids.index(i)))
+                self.db.commit()
+            except BaseException:
+                self.db.rollback()
+                raise
+            self._touch_stamp()
             return {"segments": len(ids), "new": len(new), "entries": self.count()}
+
+    def _missing(self, ids: list) -> "Optional[tuple[bool, list]]":
+        """(rebuild?, segment ids to apply) against the catalog as it is now, or None when it is current."""
+        have = {r[0] for r in self.db.execute("SELECT id FROM segs")}
+        rebuild = bool(ids) and not have.issubset(ids)  # compaction replaced segments
+        new = [i for i in ids if rebuild or i not in have]
+        return (rebuild, new) if rebuild or new else None
+
+    def _fetch_segments(self, ids: list) -> dict:
+        blobs = dict(zip(ids, self._pool.map(lambda i: self.b.get(f"segments/{i}.seg"), ids)))
+        self.stats["requests"] += len(ids) + 1
+        for i, blob in blobs.items():
+            if _sha(blob) != i:
+                raise IOError(f"segment {i} corrupt")
+        return blobs
+
+    def _touch_stamp(self):
+        try:
+            with open(self._stamp, "a"):
+                os.utime(self._stamp)
+        except OSError:
+            pass
 
     @staticmethod
     def _exts_of(r) -> list:
