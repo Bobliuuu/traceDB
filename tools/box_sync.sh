@@ -3,7 +3,7 @@
 # Run by systemd tracedb-sync.timer (every ~30 min). One cycle:
 #   0 self-update (git pull traceDB/ontolagni)      1 Mac inbox -> redacted store + vault + blobs, then ack (sha256) for the Mac
 #   2 pull extra boxes listed in box-pull.txt        3 all GitHub repos (gh_capture, token from the vault)
-#   4 index update + verify                          5 ontology/wiki rebuild (at most every 6 h, or FORCE_ONTOLOGY=1)
+#   4 index update + merge + verify                  5 ontology/wiki rebuild (at most every 1 h, or FORCE_ONTOLOGY=1)
 #   6 heartbeat (S3 health/heartbeat.json) + CloudWatch metric Tracedb/Sync SyncOK (alarm = no datapoint for 3 h)
 # Log: ~/tracedb-work/logs/box-<UTC>.log (last 30 kept). Crash-safe: flock single instance, every step idempotent.
 export PATH=$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin:$PATH
@@ -64,7 +64,7 @@ $T verify | head -c 300 || true
 
 log "== 5 ontology"
 LASTO=state/last-ontology; NOW=$(date +%s)
-if [ "${FORCE_ONTOLOGY:-0}" = 1 ] || [ ! -f $LASTO ] || [ $((NOW - $(cat $LASTO))) -gt 21600 ]; then
+if [ "${FORCE_ONTOLOGY:-0}" = 1 ] || [ ! -f $LASTO ] || [ $((NOW - $(cat $LASTO))) -gt ${ONTOLOGY_EVERY_S:-3600} ]; then  # a rebuild is ~40 s (pb-orch, 2026-11-26): new projects show in find within the hour
   aws s3 cp "${TRACEDB_STORE%/*}/setup/describe.json" describe.json --only-show-errors 2>/dev/null || true
   if DESCRIBE=$PWD/describe.json bash $TL/rebuild_ontology.sh; then echo $NOW > $LASTO; else log "ontology rc=$?"; fail=1; fi
 else log "skip (built $(( (NOW - $(cat $LASTO))/60 )) min ago)"; fi
