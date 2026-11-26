@@ -24,6 +24,11 @@ def main():
         for ln in open(extra).read().split():
             if "/" in ln: repos.append({"name": ln.split("/")[1], "nameWithOwner": ln, "pushedAt": "?", "isEmpty": False})
     st = open_store(os.environ["TRACEDB_STORE"]); vt = open_store(os.environ["VAULT_STORE"])
+    st.sync()
+    # sha of the manifest this tool wrote per repo: if another writer (e.g. git_capture on a stale local clone) replaced it, capture again
+    man_f = os.path.join(G.WORK, "state", "gh-capture-manifest.json")
+    mans = json.load(open(man_f)) if os.path.exists(man_f) else {}
+    stored = lambda nm: (st.locate(f"repos/{nm}/.git-bundle/manifest.json") or {}).get("sha")
     cache = os.path.join(G.WORK, "gh-cache"); os.makedirs(cache, exist_ok=True)
     args = {"dry": False, "force": True, "scratch": False, "maxscan": 600, "only": None}
     bad = n = 0
@@ -31,7 +36,9 @@ def main():
         nm = r["name"]
         if only and nm != only: continue
         if r.get("isEmpty"): continue
-        if not force and state.get(r["nameWithOwner"]) == r["pushedAt"] and r["pushedAt"] != "?": continue
+        key = r["nameWithOwner"]
+        overwritten = key in mans and stored(nm) != mans[key]
+        if not force and not overwritten and state.get(key) == r["pushedAt"] and r["pushedAt"] != "?": continue
         d = os.path.join(cache, nm + ".git")
         shutil.rmtree(d, ignore_errors=True)
         try:
@@ -39,7 +46,9 @@ def main():
             if c.returncode: raise RuntimeError(c.stderr[-200:])
             res = G.capture(d, [d], f"repos/{nm}/.git-bundle/", st, vt, args, {})
             print(json.dumps({"repo": nm, "ok": bool(res), "size": (res or {}).get("bundle_size")}), flush=True)
-            if res: state[r["nameWithOwner"]] = r["pushedAt"]; n += 1
+            if res:
+                state[r["nameWithOwner"]] = r["pushedAt"]; n += 1
+                st.sync(); mans[r["nameWithOwner"]] = stored(nm); json.dump(mans, open(man_f, "w"))
             else: bad += 1
         except Exception as e:
             bad += 1; print(json.dumps({"repo": nm, "error": repr(e)[:200]}), flush=True)
