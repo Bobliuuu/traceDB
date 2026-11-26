@@ -5,8 +5,8 @@ summary) and the full-text index are queried in parallel with the question's con
 fused (reciprocal rank, curated ops/memory pages first), and the best page is printed inline, so most questions need
 no second command. Every other hit carries its exact follow-up command.
 
-    tracedb ask "where is the rsi vis"            # text: best page inline + ranked hits
-    tracedb ask "fnx lane" --json --limit 5       # for scripts and bench/ask_eval.py
+    tracedb ask "where is the dashboard"        # text: best page inline + ranked hits
+    tracedb ask "gpu boxes" --json --limit 5       # for scripts and bench/ask_eval.py
 
 The ontology is optional (ontolagni importable and $ONTOLAGNI_DIR / $ONTOLOGY_DIR / ~/ontology present); without it
 only the full-text index answers.
@@ -15,7 +15,7 @@ from __future__ import annotations
 import os, re, time
 from concurrent.futures import ThreadPoolExecutor
 
-# question words that only dilute an AND query ("where is the rsi vis" -> "rsi vis")
+# question words that only dilute an AND query ("where is the dashboard" -> "dashboard")
 STOP = set("""a an the is are was were be been being am of to in on at for and or nor not no do does did done how what
 which who whom whose where when why can could should would will shall may might must we i me my you your our ours it its
 this that these those with from by about into onto as any there their them they he she his her have has had get got
@@ -111,6 +111,33 @@ def live_summary(store) -> dict:
     return out
 
 
+SKIP_ROOTS = ("eval/",)               # search test sets quote the questions verbatim: never an answer
+ANCHOR_DF = 12                       # a word in at most this many ontology nodes names a specific thing
+ANCHOR_HIT, ANCHOR_MISS = 1.4, 0.6
+
+
+def anchor_terms(question: str, words: list[str], onto) -> set[str]:
+    """Words that pin the answer down, which a common word would otherwise outrank: a possessive name ("alice's
+    report": alice), or the rare part of a compound token, the way ids and host names are written ("db-replicas":
+    replicas in a handful of nodes). A plain English word is never an anchor: rare in the ontology ("codes", "synced") is not
+    the same as specific. Every anchor must occur in at least one node."""
+    inv = getattr(onto, "_inv", None) or {}
+    df = lambda w: len(inv.get(w, ()))
+    out = {w.lower() for w in re.findall(r"([A-Za-z][A-Za-z0-9_]*)'s\b", question)
+           if w.lower() not in STOP and df(w.lower()) >= 1}
+    for w in words:
+        if re.search(r"[-.]|\d", w.strip(".")):
+            for part in re.split(r"[-.]+", w.lower().strip(".")):
+                if len(part) >= 4 and part not in STOP and 1 <= df(part) <= ANCHOR_DF:
+                    out.add(part)
+    return out
+
+
+def _node_words(onto, c) -> str:
+    n = (onto.nodes.get(c["id"]) if onto is not None else None) or {}
+    return " ".join([c["id"], n.get("summary", ""), n.get("text", ""), c.get("snippet", ""), c.get("path", "")]).lower()
+
+
 def _onto_dir() -> str | None:
     for d in (os.environ.get("ONTOLAGNI_DIR"), os.environ.get("ONTOLOGY_DIR"), os.path.expanduser("~/ontology")):
         if d and os.path.exists(os.path.join(d, "ontology.jsonl")):
@@ -169,11 +196,13 @@ def ask(store, question: str, limit: int = 8, page: bool = True, index_store=Non
     def slot(id_):
         return cand.setdefault(id_, {"id": id_, "score": 0.0, "via": []})
 
+    found = [n for n in found if not n["id"].startswith(SKIP_ROOTS)]
     for r, n in enumerate(found):
         c = slot(n["id"])
         c["score"] += 1.0 / (RRF_K + r)
         c["via"].append("ontology")
         c.update({k: n[k] for k in ("kind", "summary", "readme") if n.get(k)})
+    hits = [h for h in hits if not h["path"].startswith(SKIP_ROOTS)]
     for r, h in enumerate(hits):
         c = slot(_owner(onto, h["path"]))
         if "text" not in c["via"]:  # an owner counts its best text hit only: 500 matching files in one dir is one answer
@@ -182,7 +211,17 @@ def ask(store, question: str, limit: int = 8, page: bool = True, index_store=Non
             c.setdefault("snippet", h.get("snippet", ""))
             c.setdefault("path", h["path"])
             c.setdefault("cmd", h["cmd"])
+    anchors = anchor_terms(question, words, onto)
+    if anchors and onto is not None:
+        for a in anchors:  # the nodes a distinctive word points at must be candidates
+            for r, n in enumerate(x for x in onto.find(a, limit=3) if "id" in x):
+                c = slot(n["id"])
+                c["score"] += 0.5 / (RRF_K + r)
+                if "ontology" not in c["via"]:
+                    c["via"].append("ontology")
     for c in cand.values():
+        if anchors:
+            c["score"] *= ANCHOR_HIT if any(a in _node_words(onto, c) for a in anchors) else ANCHOR_MISS
         top = c["id"].split("/")
         page = CURATED.get(top[0], 1.0) if len(top) <= 2 else 1.0  # the curated pages themselves, not data under them
         c["score"] *= page * (1.25 if len(c["via"]) > 1 else 1.0)
