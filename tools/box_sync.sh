@@ -12,6 +12,7 @@ mkdir -p logs state
 [ -f ~/.config/tracedb/env ] && { set -a; . ~/.config/tracedb/env; set +a; }
 unset AWS_PROFILE; export TRACEDB_KEYLESS=1 AWS_DEFAULT_REGION=us-east-1 TRACEDB_SYNC_TTL=0 INBOX=${INBOX:-/srv/tracedb-inbox/mac}
 exec 9>"$W/state/box-sync.lock"; flock -n 9 || { echo "another box_sync is running"; exit 0; }
+rmdir logs/store-write.lock 2>/dev/null   # we hold the only flock, so a leftover write lock is from a killed/rebooted cycle
 LOG=logs/box-$(date -u +%Y%m%dT%H%M%SZ).log; exec >>"$LOG" 2>&1; ls -1t logs/box-*.log | tail -n +31 | xargs -r rm -f
 log() { echo "[$(date -u +%H:%M:%S)] $*"; }
 HB=traceDB/tools/box_heartbeat.sh
