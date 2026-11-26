@@ -45,7 +45,8 @@ def main(argv=None):
     p.add_argument("--max-bytes", type=int); p.add_argument("--out")
     p = sp.add_parser("blob-info"); p.add_argument("path")
     p = sp.add_parser("search", help="full-text search over the store's FTS index (index/fts.sqlite)")
-    p.add_argument("text", nargs="+"); p.add_argument("--prefix", default=""); p.add_argument("--limit", type=int, default=10)
+    p.add_argument("text", nargs="+"); p.add_argument("--prefix", default=""); p.add_argument("--limit", type=int, default=50, help="max hits (0 = 1000)")
+    p.add_argument("--per-file", type=int, default=3, help="max hits per file")
     p.add_argument("--paths", action="store_true", help="search file paths only")
     p.add_argument("--index", default="index/fts.sqlite", help="legacy single-file index key (used only if no v3 index exists)")
     p.add_argument("--index-store", help="store holding the v3 index (default: the data store)")
@@ -116,7 +117,7 @@ def main(argv=None):
                 ist.sync_if_stale()
             ix = IndexSet.open(ist, st)
             if ix is not None:
-                out(ix.search(" ".join(a.text), a.prefix, a.limit, a.paths, snippets=not a.no_snippets)); return 0
+                out(ix.search(" ".join(a.text), a.prefix, a.limit, a.paths, snippets=not a.no_snippets, per_file=a.per_file)); return 0
             e = st.locate(a.index)
             if not e:
                 print(f"no index at {a.index}; build with build_index.py", file=sys.stderr); return 4

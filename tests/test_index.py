@@ -102,3 +102,30 @@ def test_lazy_matches_download(tmp_path, monkeypatch):
     monkeypatch.setenv("TRACEDB_INDEX_LAZY", "0")
     b = IndexSet.open(st).search("vllm oom")
     assert [x["path"] for x in a] == [x["path"] for x in b] and a[0]["offset"] == b[0]["offset"]
+
+
+def test_limit_per_file_and_or_fill(tmp_path):
+    root = tmp_path / "store"
+    st = open_store(str(root), cache_dir=str(tmp_path / "cache"))
+    line = lambda t: json.dumps({"role": "user", "content": t}).encode() + b"\n"
+    # one big file with many distinct matching chunks + many small files
+    big = b"".join(line(f"zebra stripes variant {i} " + "filler word " * 200 + f"uniq{i}") for i in range(60))
+    files = [("traces/big.jsonl", big, {})]
+    files += [(f"traces/s{i}.jsonl", line(f"zebra herd number {i} " + "other words " * 5 + f"u{i}"), {}) for i in range(40)]
+    files += [("traces/only_apple.jsonl", line("apple orchard notes"), {})]
+    st.put(files)
+    build_index(st, st, jobs=2, work=str(tmp_path / "work"))
+    st.sync()
+    ix = IndexSet.open(st)
+    # limit honoured beyond the old 10 / one big file can't starve the rest
+    r = ix.search("zebra", limit=45, snippets=False)
+    assert len(r) == 41 and len({h["path"] for h in r}) == 41      # 1 per file by default
+    # per_file lets one file contribute several chunks (distinct offsets)
+    r = ix.search("zebra", limit=50, per_file=5, snippets=False)
+    big_hits = [h for h in r if h["path"] == "traces/big.jsonl"]
+    assert len(big_hits) == 5 and len({h["offset"] for h in big_hits}) == 5
+    # limit 0 = max; AND hits come first, OR fills the remainder
+    r = ix.search("zebra apple", limit=0, snippets=False)
+    assert len(r) >= 42
+    r = ix.search("zebra stripes", limit=3, snippets=False)
+    assert r[0]["path"] == "traces/big.jsonl"

@@ -494,6 +494,13 @@ def _terms(text: str) -> list[str]:
     return re.findall(r"[A-Za-z0-9_]+", text)
 
 
+MAX_LIMIT = 1000        # hard ceiling for --limit (0 = this)
+_POOL_MULT = 20         # candidate chunks fetched per wanted hit (was 6; one big file used to eat the pool)
+_DUP_POOL_MULT = 40     # candidate chunks scanned for identical-copy lookups under a prefix (was 8)
+_DUP_ROWS_MULT = 50     # copies returned per generation per wanted hit (was 4)
+_BATCH = 500            # ids per IN (...) query
+
+
 def _q(text: str) -> str:
     if re.search(r'["*]|\b(AND|OR|NOT|NEAR)\b', text):
         return text
@@ -567,48 +574,63 @@ class IndexSet:
             rows = c.execute("SELECT rowid, rank FROM chunks WHERE chunks MATCH ? AND rowid BETWEEN ? AND ? ORDER BY rank LIMIT ?",
                              (q, lo, hi, n)).fetchall() if hi >= lo else []
             if rows:
-                ids = ",".join(str(r[0]) for r in rows)
-                meta = {r[0]: r[1:] for r in c.execute(
-                    f"SELECT cm.id, f.path, cm.off, cm.rl, f.note FROM cm JOIN files f ON f.id=cm.fid WHERE cm.id IN ({ids})").fetchall()}
+                meta = {}
+                for b in range(0, len(rows), _BATCH):  # batched: a long IN (...) list can exceed SQLITE_MAX_SQL_LENGTH
+                    ids = ",".join(str(r[0]) for r in rows[b:b + _BATCH])
+                    meta.update({r[0]: r[1:] for r in c.execute(
+                        f"SELECT cm.id, f.path, cm.off, cm.rl, f.note FROM cm JOIN files f ON f.id=cm.fid WHERE cm.id IN ({ids})").fetchall()})
                 out = [(sc, *meta[rid]) for rid, sc in rows if rid in meta]
             # identical chunks: files holding a copy of an indexed chunk score like the indexed one (restricted to the prefix's files)
             drows = rows if not prefix else c.execute(  # prefix: the indexed copy may live outside it
-                "SELECT rowid, rank FROM chunks WHERE chunks MATCH ? ORDER BY rank LIMIT ?", (q, n * 8)).fetchall()
+                "SELECT rowid, rank FROM chunks WHERE chunks MATCH ? ORDER BY rank LIMIT ?", (q, n * _DUP_POOL_MULT)).fetchall()
         except Exception:
             return out
         if drows:
             sc_of = dict(drows)
-            ids = ",".join(str(r[0]) for r in drows)
-            for orig, path, off, rl, note in c.execute(
-                    f"SELECT d.orig, f.path, d.off, d.rl, f.note FROM dups d JOIN files f ON f.id=d.fid "
-                    f"WHERE d.orig IN ({ids}) AND d.fid BETWEEN {int(flo)} AND {int(fhi)} LIMIT {n * 4}").fetchall():
-                out.append((sc_of[orig], path, off, rl, note))
+            for b in range(0, len(drows), _BATCH):
+                ids = ",".join(str(r[0]) for r in drows[b:b + _BATCH])
+                for orig, path, off, rl, note in c.execute(
+                        f"SELECT d.orig, f.path, d.off, d.rl, f.note FROM dups d JOIN files f ON f.id=d.fid "
+                        f"WHERE d.orig IN ({ids}) AND d.fid BETWEEN {int(flo)} AND {int(fhi)} LIMIT {n * _DUP_ROWS_MULT}").fetchall():
+                    out.append((sc_of[orig], path, off, rl, note))
         return out
 
-    def search(self, text: str, prefix: str = "", limit: int = 10, paths_only: bool = False, snippets: bool = True) -> list[dict]:
+    def _collect(self, gens, q, prefix, pool):
+        hits = []
+        for i, g in gens:
+            dead = self._dead_after(i)
+            for sc, path, off, rl, note in self._gen_hits(g, q, prefix, pool):
+                if path not in dead:
+                    hits.append((sc, path, off, rl, note))
+        hits.sort(key=lambda h: h[0])
+        return hits
+
+    def search(self, text: str, prefix: str = "", limit: int = 10, paths_only: bool = False, snippets: bool = True,
+               per_file: int = 1) -> list[dict]:
+        """limit <= 0 means MAX_LIMIT. per_file = max hits (distinct chunks) returned per file.
+        All terms are ANDed first; if that yields fewer than `limit` hits the same query ORed
+        fills the remainder (ranked after every AND hit)."""
+        limit = MAX_LIMIT if limit <= 0 else min(limit, MAX_LIMIT)
+        per_file = max(1, per_file)
         gens = self._gens_for(prefix)
         if paths_only:
             return self._search_paths(text, prefix, limit, gens)
         q = _q(text)
-        for attempt in (0, 1):
-            hits = []
-            for i, g in gens:
-                dead = self._dead_after(i)
-                for sc, path, off, rl, note in self._gen_hits(g, q, prefix, limit * 6):
-                    if path not in dead:
-                        hits.append((sc, path, off, rl, note))
-            if hits or attempt or q.count('"') <= 2 or "OR" in q:
-                break
-            q = q.replace('" "', '" OR "')
-        hits.sort(key=lambda h: h[0])
-        out, seen = [], set()
-        for sc, path, off, rl, note in hits:
-            if path in seen:
-                continue
-            seen.add(path)
-            cmd = (f"tracedb blob-get {path} --start {off} --end {off + 4096}" if note == "blob-head"
-                   else f"tracedb get {path} --start {off} --end {off + 4096}")
-            out.append({"path": path, "offset": off, "score": round(-sc, 3), "snippet": "", "cmd": cmd, "_rl": rl, "_blob": note == "blob-head"})
+        pool = limit * per_file * _POOL_MULT
+        queries = [q]
+        if q is not text and len(_terms(text)) > 1:  # auto-built AND query: OR version is the fallback/filler
+            queries.append(q.replace('" "', '" OR "'))
+        out, seen_chunk, per = [], set(), {}
+        for qq in queries:
+            for sc, path, off, rl, note in self._collect(gens, qq, prefix, pool):
+                if (path, off) in seen_chunk or per.get(path, 0) >= per_file:
+                    continue
+                seen_chunk.add((path, off)); per[path] = per.get(path, 0) + 1
+                cmd = (f"tracedb blob-get {path} --start {off} --end {off + 4096}" if note == "blob-head"
+                       else f"tracedb get {path} --start {off} --end {off + 4096}")
+                out.append({"path": path, "offset": off, "score": round(-sc, 3), "snippet": "", "cmd": cmd, "_rl": rl, "_blob": note == "blob-head"})
+                if len(out) >= limit:
+                    break
             if len(out) >= limit:
                 break
         if snippets:
@@ -656,7 +678,7 @@ class IndexSet:
             try:
                 rows = c.execute("SELECT f.path FROM paths JOIN files f ON f.id=paths.rowid WHERE paths MATCH ? "
                                  "AND f.path>=? AND f.path<? ORDER BY rank LIMIT ?",
-                                 (q, prefix, prefix + "\U0010ffff", limit * 4)).fetchall()
+                                 (q, prefix, prefix + "\U0010ffff", limit * _POOL_MULT)).fetchall()
             except Exception:
                 rows = []
             for (p,) in rows:
