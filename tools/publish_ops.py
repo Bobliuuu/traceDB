@@ -14,7 +14,7 @@ body, which `ontolagni find` indexes at low weight, so a word deep in a page sti
 
     python publish_ops.py [--root ops|memory|all] [--dry-run]
 """
-import argparse, json, os, pathlib, re, sys
+import argparse, hashlib, json, os, pathlib, re, sys
 
 STORE = os.environ.get("TRACEDB_STORE")
 DSTS = (os.environ.get("ONTOLOGY_DESTS") or "").split()
@@ -69,6 +69,36 @@ def describe_page(t: str) -> dict:
             "text": one_line(" ".join(([fm.get("name", "")] if fm else []) + lines), TEXT_CAP)}
 
 
+STATE = pathlib.Path(os.environ.get("OPS_PUBLISH_STATE", pathlib.Path.home() / ".local/state/ops-publish"))
+
+
+def guard(st, root, items, files):
+    """Never overwrite a page someone changed in traceDB from another machine (2026-11-26: a publish from pb-orch's
+    older local copy reverted ops/pb-team). Per page, against the sha this machine last published (P), the store's
+    current sha (R) and the local page (L):  R == L: nothing to do.  R missing or R == P: local edit -> put.
+    R changed elsewhere and the local page is unedited (L == P, or no record yet): pull R into the local file.
+    Both changed: keep the store's copy, save it next to the local file as .remote, report the conflict."""
+    sp = STATE / f"{root}.shas.json"
+    last = json.loads(sp.read_text()) if sp.exists() else {}
+    keep, conflicts = [], []
+    for (path, body, meta), f in zip(items, files):
+        e = st.locate(path)
+        L, R, P = hashlib.sha256(body).hexdigest(), (e or {}).get("sha"), last.get(path)
+        if R == L:
+            last[path] = L
+        elif R is None or R == P:
+            keep.append((path, body, meta))
+        elif P is None or L == P:
+            f.write_bytes(st.read(path, max_bytes=-1))
+            last[path] = R
+            print(f"{path}: changed in traceDB elsewhere, pulled into {f}")
+        else:
+            f.with_name(f.name + ".remote").write_bytes(st.read(path, max_bytes=-1))
+            conflicts.append(path)
+            print(f"{path}: CONFLICT, changed both here and in traceDB; kept traceDB's copy, merge {f}.remote into {f}")
+    return keep, last, sp, conflicts
+
+
 def publish_root(root: str, dry_run: bool):
     src, pattern, words = SOURCES[root]
     pages = sorted(p for p in src.glob(pattern) if p.name != "MEMORY.md")  # MEMORY.md is the index, not a memory
@@ -85,7 +115,13 @@ def publish_root(root: str, dry_run: bool):
     from ontolagni.publish import publish
     st = open_store(STORE)
     st.sync()
-    print("traceDB put:", json.dumps(st.put(items)))
+    items, last, state_file, conflicts = guard(st, root, items, pages)
+    res = st.put(items) if items else {"added": 0}
+    print("traceDB put:", json.dumps(res))
+    for path, body, _ in items:
+        last[path] = hashlib.sha256(body).hexdigest()
+    STATE.mkdir(parents=True, exist_ok=True)
+    state_file.write_text(json.dumps(last, indent=1, sort_keys=True))
     ents = st.ls(root + "/", limit=10 ** 7)
     desc = {}
     for e in ents:
@@ -102,6 +138,8 @@ def publish_root(root: str, dry_run: bool):
     for dst in DSTS:
         res = publish(dst, overlay=(root, nodes), render_docs=True)
         print(f"overlay {root} -> {dst}: {len(nodes)} nodes, ontology now {res['nodes']} ({res['attempts']} attempts)")
+    if conflicts:
+        sys.exit(f"{len(conflicts)} conflict(s): {conflicts}")
 
 
 def main():
