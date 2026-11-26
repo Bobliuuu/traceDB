@@ -34,13 +34,14 @@ sudo mkdir -p $INBOX/in $INBOX/ack /home/inbox/.ssh
 PUB=$(aws s3 cp "s3://$B/setup/tracedb-sync-push.pub" - --only-show-errors)
 echo "command=\"/usr/bin/rrsync $INBOX\",restrict $PUB" | sudo tee /home/inbox/.ssh/authorized_keys >/dev/null
 sudo chown -R inbox:inbox /home/inbox/.ssh $INBOX; sudo chmod 700 /home/inbox/.ssh; sudo chmod 600 /home/inbox/.ssh/authorized_keys
-sudo chmod -R a+rX $INBOX            # ubuntu (the ingest user) reads what inbox wrote
+sudo chmod -R a+rX $INBOX; sudo chown ubuntu $INBOX/ack   # ubuntu (ingest user) reads in/, writes ack/
+sudo chmod 755 $INBOX $INBOX/ack
 sudo usermod -aG inbox ubuntu || true
 printf 'PasswordAuthentication no\nKbdInteractiveAuthentication no\nPermitRootLogin no\n' | sudo tee /etc/ssh/sshd_config.d/99-tracedb.conf >/dev/null
 sudo systemctl reload ssh || sudo systemctl reload sshd || true
 sudo systemctl enable --now fail2ban >/dev/null 2>&1 || true
-step "5 ssh keys for other boxes (from the vault, never aws creds)"
-bash traceDB/tools/box_ssh_pull.sh || echo "ssh pull skipped (vault read failed)"
+step "5 ssh keys for other boxes: OPT-IN only (TRACEDB_SSH_PULL=1, user approval needed; see docs/SYNC_BOX.md)"
+if [ "${TRACEDB_SSH_PULL:-0}" = 1 ]; then bash traceDB/tools/box_ssh_pull.sh || echo "ssh pull failed"; else echo skipped; fi
 step "6 systemd timers"
 sudo tee /etc/systemd/system/tracedb-sync.service >/dev/null <<UNIT
 [Unit]

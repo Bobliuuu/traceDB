@@ -59,15 +59,12 @@ def load_conf():
 def push(src, prefix, extra):
     if not os.path.exists(src): return 0, "missing"
     ssh = "ssh -o BatchMode=yes -o ConnectTimeout=20 -o ServerAliveInterval=30"
-    base = [rsync_bin(), "-rlt", "--partial", "--timeout=300", "-e", ssh] + [f"--exclude={x}" for x in EXCL + extra]
+    base = [rsync_bin(), "-rlt", "--partial-dir=.rsync-partial", "--chmod=Du=rwx,Dgo=rx,Fu=rw,Fgo=r", "--timeout=300", "-e", ssh] + [f"--exclude={x}" for x in EXCL + extra]
     if os.path.isfile(src):
         cmd = base + [src, f"{ALIAS}:in/{prefix}/{os.path.basename(src)}"]
-        # rrsync cannot mkdir -p two levels: make the dir via an empty-dir sync first
     else:
         cmd = base + [src.rstrip("/") + "/", f"{ALIAS}:in/{prefix}/"]
-    r = run(["mkdir", "-p", CACHE]); r = run(cmd)
-    if r.returncode and "No such file or directory" in r.stderr and "mkdir" in r.stderr.lower():
-        pass
+    r = run(cmd)
     return r.returncode, r.stderr[-300:]
 
 
@@ -94,12 +91,14 @@ def prune(rows, acked):
     freed = n = 0
     for src, prefix, days, _ in rows:
         if days == 0 or not os.path.isdir(src) and not os.path.isfile(src): continue
-        cutoff = time.time() - max(days, 0) * 86400 - (0 if days < 0 else 0)
+        cutoff = time.time() - max(days, 0) * 86400
         paths = [src] if os.path.isfile(src) else [os.path.join(dp, f) for dp, dn, fs in os.walk(src) for f in fs]
         for full in paths:
             rel = f"{prefix}/{os.path.basename(src) if os.path.isfile(src) else os.path.relpath(full, src)}"
             try:
                 st = os.lstat(full)
+                parts = rel.split("/")
+                if "memory" in parts or full.endswith((".md", ".toml", ".yaml", ".yml")) and days > 0: continue   # live state, never pruned
                 if not os.path.isfile(full) or os.path.islink(full) or (days > 0 and st.st_mtime > cutoff) or (days < 0 and time.time() - st.st_mtime < 120): continue
                 if acked.get(rel) == sha256(full):
                     os.remove(full); freed += st.st_size; n += 1

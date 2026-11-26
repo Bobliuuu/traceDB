@@ -1,6 +1,7 @@
 #!/bin/bash
 # box_ssh_pull.sh -- give the box the user's ssh keys + config from the vault (keyless: instance role reads the vault) so it can reach
 # every other box by alias. Deliberately NOT `keys pull`: that also writes ~/.aws/credentials (static MFA-denied keys would shadow the instance role).
+# OPT-IN: copies every vault ssh key to this box, i.e. gives it a route to every box. Run only with the user's approval.
 # Never overwrites authorized_keys. Never prints key material.
 set -u
 W=${TRACEDB_WORK:-$HOME/tracedb-work}; . ~/.config/tracedb/env; unset AWS_PROFILE

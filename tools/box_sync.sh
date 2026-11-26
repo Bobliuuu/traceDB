@@ -45,6 +45,7 @@ if [ -f box-pull.txt ]; then
 fi
 
 log "== 3 github"
+if [ -f state/gh.hold ]; then log "held (state/gh.hold: another machine is capturing the same repos)"; else
 GHT=$($T --store "$VAULT_STORE" get --max-bytes -1 home/gh-current/hosts.yml 2>/dev/null | python3 -c 'import sys,re;m=re.search(r"oauth_token:\s*(\S+)",sys.stdin.read());print(m.group(1) if m else "")')
 if [ -n "$GHT" ]; then
   export GH_TOKEN=$GHT; unset GHT
@@ -52,6 +53,7 @@ if [ -n "$GHT" ]; then
   withgit || { log "gh_capture rc=$?"; fail=1; }
   unset GH_TOKEN
 else alert "no GitHub token in vault home/gh-current/hosts.yml: one-time step, see docs/SYNC_BOX.md"; fail=1; fi
+fi
 
 log "== 4 index"
 $T sync && $T index update --jobs 4 || { log "index rc=$?"; fail=1; }

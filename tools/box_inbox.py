@@ -29,7 +29,7 @@ def stage():
     shutil.rmtree(STAGE, ignore_errors=True)
     pend, srcs = {}, set()
     for dp, dn, fs in os.walk(IN):
-        dn[:] = [d for d in dn if not d.startswith(".~tmp~")]
+        dn[:] = [d for d in dn if not d.startswith(".~tmp~") and d != ".rsync-partial"]
         for f in fs:
             if f.startswith(".") and f.count(".") > 2 or f.endswith(SKIP_SUFFIX):
                 continue  # rsync temp files
@@ -46,10 +46,10 @@ def stage():
                 continue  # need <kind>/<name>/file
             dst = os.path.join(STAGE, rel); os.makedirs(os.path.dirname(dst), exist_ok=True)
             try:
-                os.link(full, dst)
+                shutil.copy2(full, dst)  # a private snapshot (protected_hardlinks forbids linking another user's file)
                 pend[rel] = [sig, sha256(dst)]
-            except OSError:
-                continue
+            except OSError as e:
+                print(f"stage failed: {type(e).__name__} for one file", file=sys.stderr); continue
             srcs.add("/".join(parts[:2]))
     json.dump(pend, open(PEND, "w"))
     for s in sorted(srcs):
@@ -57,17 +57,38 @@ def stage():
     print(f"staged {len(pend)} files in {len(srcs)} sources", file=sys.stderr)
 
 
+def confirmer():
+    """True only if the ORIGINAL bytes (sha256) are really in a store: main entry, main blob, or vault entry at that path."""
+    from tracedb.store import open_store
+    from tracedb.blob import blob_info
+    stores = [open_store(os.environ["TRACEDB_STORE"]), open_store(os.environ["VAULT_STORE"])]
+    for s in stores:
+        s.sync()
+
+    def stored(rel, sh):
+        for s in stores:
+            e = s.locate(rel)
+            if e and (e["sha"] == sh or (e.get("meta") or {}).get("blob") == sh and blob_info(s, rel)):
+                return True
+        return False
+    return stored
+
+
 def commit():
     if not os.path.exists(PEND):
         return
     pend = json.load(open(PEND)); state = json.load(open(STATE)) if os.path.exists(STATE) else {}
+    stored = confirmer()
     os.makedirs(os.path.dirname(ACK), exist_ok=True)
+    n = 0
     with open(ACK, "a") as a:
         for rel, (sig, sh) in pend.items():
-            a.write(f"{sh}\t{rel}\n"); state[rel] = sig
+            if stored(rel, sh):
+                a.write(f"{sh}\t{rel}\n"); n += 1
+            state[rel] = sig  # unconfirmed (skipped by ingest rules): not acked, so the Mac never deletes it
     json.dump(state, open(STATE + ".tmp", "w")); os.replace(STATE + ".tmp", STATE)
     os.remove(PEND); shutil.rmtree(STAGE, ignore_errors=True)
-    print(f"acked {len(pend)} files", file=sys.stderr)
+    print(f"acked {n} of {len(pend)} files (sha256 confirmed in a store)", file=sys.stderr)
 
 
 def abort():
