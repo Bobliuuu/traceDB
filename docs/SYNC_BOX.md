@@ -80,3 +80,9 @@ every machine, so it is **opt-in and needs the owner's approval**. Nothing is en
 
 Modal and Vast artifacts are not pulled by the box. Work on other machines reaches tracedb only through GitHub, the
 buckets, the Mac push, or an approved `box-pull.txt` entry.
+
+## GitHub repo capture
+`tools/gh_capture.py` captures every repo of github.com/Bobliuuu (`gh repo list`, plus `~/tracedb-work/srcs-github.txt`, one owner/name per line) to
+`repos/<name>/.git-bundle/` (restore: `tools/restore_repo.sh repos/<name>`). It re-captures a repo only when `pushedAt` changes (`state/gh-capture.json`),
+mirror-clones one repo at a time into `gh-cache/` and deletes the clone. First full run (2026-11-26): 194 non-empty repos, 0 failures.
+`tools/auto-sync.mac.sh` is the retired Mac cycle (now with alerts in `logs/ALERT.txt` and `state/heartbeat.json`).
