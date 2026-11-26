@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """ask_eval.py -- how fast and how well do our search entry points answer real questions?
 
-Each line of ask_questions.jsonl is {"q": question as the user asks it, "want": [id/path substrings]}. A method scores a
+Each line of a question file is {"q": question as the user asks it, "want": [id/path substrings]}. The question
+sets are private (they quote the user's chats and name internal projects) and never go in this public repo: they live
+on pb-orch in ~/tracedb-work/search-eval/ (written.jsonl, real.jsonl) and in the store under eval/search/. A method scores a
 hit when any of its top-K result ids/paths contains any `want` substring. Every method is timed as a fresh CLI process,
 the way an agent calls it. Run on pb-orch (never the laptop):
 
-    python bench/ask_eval.py [--methods find,search,ask] [--k 5]
+    python bench/ask_eval.py [--methods find,search,ask] [--k 5] [--questions ~/tracedb-work/search-eval/real.jsonl]
 """
 import argparse, json, os, pathlib, subprocess, sys, time
 
@@ -50,7 +52,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--methods", default="find,search,ask")
     ap.add_argument("--k", type=int, default=5)
-    ap.add_argument("--questions", default=str(HERE / "ask_questions.jsonl"))
+    ap.add_argument("--questions", default=os.path.expanduser("~/tracedb-work/search-eval/real.jsonl"))
     a = ap.parse_args()
     qs = [json.loads(l) for l in open(a.questions) if l.strip()]
     ms = a.methods.split(",")
