@@ -51,6 +51,8 @@ def main(argv=None):
     p.add_argument("--index", default="index/fts.sqlite", help="legacy single-file index key (used only if no v3 index exists)")
     p.add_argument("--index-store", help="store holding the v3 index (default: the data store)")
     p.add_argument("--no-snippets", action="store_true", help="skip re-reading hit bytes for snippets")
+    p = sp.add_parser("health", help="sync box heartbeat age (s3://<bucket>/health/heartbeat.json); exit 2 if stale")
+    p.add_argument("--max-age-h", type=float, default=3.0)
     p = sp.add_parser("index", help="build/update the v3 sharded search index (reads text from the store, writes index/v3/*)")
     p.add_argument("action", choices=["build", "update", "stats"])
     p.add_argument("--prefix", action="append", default=None, help="limit coverage (repeatable); default whole store")
@@ -59,6 +61,9 @@ def main(argv=None):
     a = ap.parse_args(argv)
     if not a.store:
         print("set --store or TRACEDB_STORE", file=sys.stderr); return 1
+    if a.cmd == "health":
+        from .health import check
+        rc, o = check(a.store, a.max_age_h); print(json.dumps(o, indent=1)); return rc
     st = open_store(a.store)
     os.environ.setdefault("TRACEDB_SYNC_TTL", "0")
     out = lambda o: print(json.dumps(o) if a.json or not isinstance(o, str) else o)

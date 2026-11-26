@@ -13,7 +13,7 @@
 set -euo pipefail
 [ -f ~/.config/tracedb/env ] && { set -a; . ~/.config/tracedb/env; set +a; }
 : "${TRACEDB_STORE:?set TRACEDB_STORE}" "${VAULT_STORE:?set VAULT_STORE}"
-export AWS_PROFILE=${AWS_PROFILE:-lab}
+[ "${TRACEDB_KEYLESS:-0}" = 1 ] || export AWS_PROFILE=${AWS_PROFILE:-lab}   # keyless box (instance role): no profile
 BIN=${TRACEDB_VENV:-$HOME/tracedb-work/venv}/bin
 W=${ONTO_WORK:-$HOME/tracedb-work/onto-build}
 BUCKET_URL=${TRACEDB_STORE%/*}            # s3://bucket
