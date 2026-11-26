@@ -58,6 +58,8 @@ fi
 
 log "== 4 index"
 $T sync && $T index update --jobs 4 || { log "index rc=$?"; fail=1; }
+# every search opens every generation: fold the deltas into one or two once they pile up (124 after 15 days, 2026-11-26)
+$T index merge --min-deltas 48 || { log "index merge rc=$?"; fail=1; }
 $T verify | head -c 300 || true
 
 log "== 5 ontology"

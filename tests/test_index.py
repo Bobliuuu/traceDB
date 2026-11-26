@@ -1,7 +1,7 @@
 import json, os
 import pytest
 from tracedb.store import open_store
-from tracedb.index import build_index, update_index, IndexSet, chunks_of, make_snippet, _have_apsw
+from tracedb.index import build_index, update_index, merge_deltas, IndexSet, chunks_of, make_snippet, _have_apsw
 
 
 def mk(tmp_path):
@@ -129,3 +129,39 @@ def test_limit_per_file_and_or_fill(tmp_path):
     assert len(r) >= 42
     r = ix.search("zebra stripes", limit=3, snippets=False)
     assert r[0]["path"] == "traces/big.jsonl"
+
+
+def test_changed_file_in_first_shard_stays_findable(tmp_path):
+    """An update split into shards used to put its tombstones on the last shard, which hid a changed file re-indexed
+    into an earlier shard of the same update."""
+    st, work = mk(tmp_path)
+    build_index(st, st, jobs=1, work=work)
+    st.put([("config/ssh.txt", b"Host tenpct-g2\n  User walrus\n", {}),                      # sorts first: shard 0
+            ("traces/codex/b.jsonl", json.dumps({"content": "nccl timeouts fixed by narwhal"}).encode() + b"\n", {})])
+    update_index(st, st, jobs=2, work=work)
+    st.sync(); ix = IndexSet.open(st)
+    assert [h["path"] for h in ix.search("walrus")] == ["config/ssh.txt"]
+    assert [h["path"] for h in ix.search("narwhal")] == ["traces/codex/b.jsonl"]
+    assert ix.search("ubuntu") == []                                   # the old copy is tombstoned
+
+
+def test_merge_deltas(tmp_path):
+    st, work = mk(tmp_path)
+    build_index(st, st, jobs=1, work=work)
+    st.put([("traces/codex/c.jsonl", json.dumps({"content": "brand new zebra topic"}).encode() + b"\n", {})])
+    update_index(st, st, jobs=1, work=work)
+    st.put([("repos/x/README.md", b"# x\nrewritten, now quokka\n", {})])
+    update_index(st, st, jobs=1, work=work)
+    st.put([("traces/codex/c.jsonl", json.dumps({"content": "zebra topic, second take with okapi"}).encode() + b"\n", {})])
+    update_index(st, st, jobs=1, work=work)
+    st.sync(); assert len(IndexSet.open(st).man["gens"]) == 4
+    r = merge_deltas(st, st, jobs=2, work=work)
+    assert r["mode"] == "merged" and r["deltas_before"] == 3
+    st.sync(); ix = IndexSet.open(st)
+    assert len(ix.man["gens"]) <= 3
+    assert ix.search("okapi")[0]["path"] == "traces/codex/c.jsonl"
+    assert ix.search("quokka")[0]["path"] == "repos/x/README.md"
+    assert ix.search("setup", prefix="repos/") == []                  # base copy still tombstoned
+    assert ix.search("tenpct-g2")[0]["path"] == "config/ssh.txt"      # base still served
+    assert ix.search("nccl")[0]["path"] == "traces/codex/b.jsonl"
+    assert update_index(st, st, jobs=1, work=work)["mode"] == "noop"  # merged state matches the catalog

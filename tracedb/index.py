@@ -332,6 +332,7 @@ def _run_build(spec, cache_root, rows, jobs, work, tag):
 
 def _publish(dest: Store, res: list, state: dict, tag: str, kind: str, dead: list, manifest, scope, cat_digest):
     gens = list((manifest or {}).get("gens", [])) if kind == "delta" else []
+    first_new = len(gens)
     for r in res:
         sha = hashlib.sha256(open(r["file"], "rb").read()).hexdigest()[:12]
         key = f"{PREFIX_KEY}g-{tag}-{sha}.sqlite"
@@ -342,8 +343,9 @@ def _publish(dest: Store, res: list, state: dict, tag: str, kind: str, dead: lis
         gens.append({"key": key, "files_key": fkey, "kind": kind, "lo": r["lo"], "hi": r["hi"], "files": r["files"],
                      "chunks": r["chunks"], "bytes": r["bytes"], "dead": []})
         os.remove(r["file"])
-    if dead:
-        gens[-1]["dead"] = sorted(set(gens[-1].get("dead", [])) | set(dead))
+    if dead:  # on the FIRST new generation: a tombstone hides copies in older generations only, never this
+        # publish's own other shards (on the last one it hid changed files re-indexed into an earlier shard)
+        gens[first_new]["dead"] = sorted(set(gens[first_new].get("dead", [])) | set(dead))
     man = {"v": 3, "built": time.time(), "scope": list(scope), "catalog_digest": cat_digest, "gens": gens}
     dest.put([(MANIFEST, json.dumps(man).encode(), {"kind": "index-manifest"})])
     return man
@@ -395,6 +397,49 @@ def update_index(src: Store, dest: Store | None = None, prefixes=("",), jobs: in
     _publish(dest, res, {p: cur[p] for p, *_ in todo}, tag, "delta", sorted(gone | changed), man, man["scope"], cd)
     return {"mode": "incremental", "new_or_changed": len(todo), "removed": len(gone), "gens": len(man["gens"]) + len(res),
             "chunks": sum(r["chunks"] for r in res), "secs": round(time.time() - t0, 1)}
+
+
+def merge_deltas(src: Store, dest: Store | None = None, jobs: int = 2, work=None, min_deltas: int = 2) -> dict:
+    """Fold every delta generation into one or `jobs` new ones; base generations stay. A search opens every
+    generation, and update_index adds one or more per run (124 after 15 days), so query time and cold downloads grow
+    without this. The files whose current version lives in a delta are re-indexed from the catalog; every tombstone
+    the deltas carried moves to the new generation (it hides old copies in base generations).
+    Not compare-and-swap, like update_index: if an update publishes meanwhile and this overwrites its manifest, the
+    next update finds those files missing from the manifest's state and indexes them again."""
+    dest = dest or src
+    src.sync()
+    man = _load_manifest(dest)
+    if man is None:
+        return {"mode": "none"}
+    gens = man["gens"]
+    nb = 0
+    while nb < len(gens) and gens[nb]["kind"] == "base":
+        nb += 1
+    deltas = gens[nb:]
+    if len(deltas) < min_deltas:
+        return {"mode": "noop", "deltas": len(deltas)}
+    owner: dict = {}  # path -> index of the generation holding its live copy
+    for i, g in enumerate(gens):
+        for q in g.get("dead", ()):
+            owner.pop(q, None)
+        for q in _load_state(dest, g):
+            owner[q] = i
+    paths = {q for q, i in owner.items() if i >= nb}
+    dead = sorted({q for g in deltas for q in g.get("dead", ())})
+    rows = [r for r in catalog_rows(src, man["scope"] or ("",)) if r[0] in paths]
+    t0 = time.time()
+    work = _stage_dir(work)
+    tag = "m%d" % int(time.time())
+    res = _run_build(src.spec, os.path.dirname(src.dir), rows, jobs, work, tag) if rows else []
+    base_man = dict(man, gens=gens[:nb])
+    state = {q: sh for q, sh, *_ in rows}
+    if not res:
+        ep = os.path.join(work, tag + "-e.sqlite")
+        w = GenWriter(ep); w.close({"lo": "", "hi": ""})
+        res = [{"file": ep, "files": 0, "chunks": 0, "bytes": os.path.getsize(ep), "lo": "", "hi": ""}]
+    new = _publish(dest, res, state, tag, "delta", dead, base_man, man["scope"], man["catalog_digest"])
+    return {"mode": "merged", "deltas_before": len(deltas), "gens_after": len(new["gens"]), "files": len(rows),
+            "tombstones": len(dead), "secs": round(time.time() - t0, 1)}
 
 
 # ---------------------------------------------------------------- reading

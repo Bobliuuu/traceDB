@@ -20,8 +20,11 @@ STOP = set("""a an the is are was were be been being am of to in on at for and o
 which who whom whose where when why can could should would will shall may might must we i me my you your our ours it its
 this that these those with from by about into onto as any there their them they he she his her have has had get got
 use used using make made find show tell give need want let s t please one some all just only also than then so if
-whats wheres hows does doesn dont don go goes much many""".split())
-CURATED = {"ops": 3.0, "memory": 2.5, "policy": 2.0, "skills": 1.5, "projects": 1.3}  # rank boost by top-level id
+whats wheres hows does doesn dont don go goes much many
+yet really actually exactly whatever able trying working happened look looking search tracedb ontology ontolagni
+ve re ll aren isn wasn weren didn haven hasn won wouldn couldn shouldn e.g eg i.e ie etc nad teh adn thorugh thru""".split())
+# rank boost for curated pages by top-level id; small: ontolagni find already ranks ops pages up (x1.6)
+CURATED = {"ops": 1.3, "memory": 1.5, "policy": 1.3, "skills": 1.2, "projects": 1.3}
 RRF_K = 10
 PAGE_BUDGET = 6000
 
@@ -30,6 +33,34 @@ def content_words(question: str) -> list[str]:
     ws = re.findall(r"[A-Za-z0-9_][A-Za-z0-9_.\-]*", question)
     keep = [w for w in ws if w.lower().strip(".-") not in STOP]
     return keep or ws
+
+
+TEXT_TERMS = 5
+
+
+def text_terms(words: list[str], onto) -> list[str]:
+    """The full-text index ANDs every term, then ORs them: a long question ANDs to nothing and its OR over common words
+    scans every generation (7-12 s). Keep the TEXT_TERMS most selective words, rarest first by ontology frequency
+    (a word the ontology does not know, a typo or a name, comes after the known rare ones), in question order."""
+    if len(words) <= TEXT_TERMS:
+        return words
+    inv = getattr(onto, "_inv", None) or {}
+    df = {w: len(inv.get(w.lower().strip("."), ())) for w in words}
+    # rarest known words first; words the ontology never saw (typos, or names) after them
+    keep = set(sorted(dict.fromkeys(words), key=lambda w: (df[w] == 0, df[w], -len(w)))[:TEXT_TERMS])
+    return [w for w in dict.fromkeys(words) if w in keep]
+
+
+def plain_query(text: str) -> str:
+    """`tracedb search` input: a question of more than 3 words without FTS syntax loses its question words
+    ("how do I get aws credentials without logging in" -> "aws credentials logging"); anything else is kept as typed."""
+    if re.search(r'["*]|\b(AND|OR|NOT|NEAR)\b', text):
+        return text
+    ws = re.findall(r"[A-Za-z0-9_][A-Za-z0-9_.\-]*", text)
+    if len(ws) <= 3:
+        return text
+    keep = [w for w in ws if w.lower().strip(".-") not in STOP]
+    return " ".join(keep[:TEXT_TERMS * 2]) if keep else text
 
 
 def _onto_dir() -> str | None:
@@ -66,28 +97,24 @@ def ask(store, question: str, limit: int = 8, page: bool = True, index_store=Non
     q = " ".join(words)
     timing = {}
 
-    def run_find():
+    def open_index():  # I/O (catalog freshness, index manifest) overlaps with the ontology load
+        store.sync_if_stale(float(os.environ.get("TRACEDB_ASK_SYNC_TTL", 300)))
+        return IndexSet.open(index_store or store, store)
+
+    with ThreadPoolExecutor(1) as ex:
+        f_ix = ex.submit(open_index)
         t = time.time()
         onto = _load_onto()
-        res = onto.find(q, limit=limit * 2) if onto else []
+        found = [r for r in (onto.find(q, limit=limit * 2) if onto else []) if "id" in r]
         timing["find"] = round(time.time() - t, 2)
-        return onto, [r for r in res if "id" in r]
-
-    def run_search():
         t = time.time()
-        store.sync_if_stale(float(os.environ.get("TRACEDB_ASK_SYNC_TTL", 300)))
-        ix = IndexSet.open(index_store or store, store)
-        res = ix.search(q, limit=limit * 3, per_file=1, snippets=True) if ix else []
-        timing["search"] = round(time.time() - t, 2)
-        return res
-
-    with ThreadPoolExecutor(2) as ex:
-        f_find, f_search = ex.submit(run_find), ex.submit(run_search)
-        onto, found = f_find.result()
+        tq = " ".join(text_terms(words, onto))
         try:
-            hits = f_search.result()
+            ix = f_ix.result()
+            hits = ix.search(tq, limit=limit * 3, per_file=1, snippets=True) if ix else []
         except Exception as e:  # the ontology alone still answers
             hits, timing["search_error"] = [], repr(e)[:200]
+        timing["search"] = round(time.time() - t, 2)
 
     cand: dict[str, dict] = {}
 
