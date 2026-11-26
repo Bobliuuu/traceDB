@@ -203,32 +203,34 @@ def _owner(onto, path: str) -> str:
     return path.rsplit("/", 1)[0] if "/" in path else path
 
 
-def ask(store, question: str, limit: int = 8, page: bool = True, index_store=None) -> dict:
-    from .index import IndexSet
-    t0 = time.time()
-    words = content_words(question)
+QCUE = re.compile(r"\b(where|find|what|which|who|how|why|when|is there|are there|do we|did we|have we|status|show|tell me|"
+                  r"open|list|can you|could you)\b|\?", re.I)
+
+
+def split_parts(text: str) -> list[str]:
+    """The asks inside one message. People write several at once ("two more things: 1. which weights ... 2. what is
+    going on with X"), or a remark before the question ("approved the resize. what is X?"); one query over all of
+    it lets the parts drown each other. Returns the asking parts (at most 3), or [text] when it is one question."""
+    t = re.sub(r"\b(e\.g|i\.e|etc)\.", lambda m: m.group(1).replace(".", ""), text, flags=re.I)
+    segs = [x.strip() for x in re.split(r"(?<=[?!.])\s+|\s+\d[.)]\s+|(?:^|\s)\d[.)]\s+|[;\n]+", t) if x and x.strip()]
+    asks = [x for x in segs if QCUE.search(x) and sum(1 for w in re.findall(r"[A-Za-z0-9_][A-Za-z0-9_.\-]*", x)
+                                                     if w.lower().strip(".-") not in STOP) >= 1]
+    return asks[:3] if len(segs) > 1 and asks else [text]
+
+
+def _rank(part: str, onto, ix, limit: int, timing: dict) -> tuple[list, str]:
+    """Ranked candidates for one ask: ontology + full text fused, anchors applied, curated pages first."""
+    words = content_words(part)
     q = " ".join(words)
-    timing = {}
-
-    def open_index():  # I/O (catalog freshness, index manifest) overlaps with the ontology load
-        # ontology-sync (every 5 min) keeps the catalog current; a question never waits on a compaction's upsert
-        store.sync_if_stale(float(os.environ.get("TRACEDB_ASK_SYNC_TTL", 1800)))
-        return IndexSet.open(index_store or store, store)
-
-    with ThreadPoolExecutor(1) as ex:
-        f_ix = ex.submit(open_index)
-        t = time.time()
-        onto = _load_onto()
-        found = [r for r in (onto.find(q, limit=limit * 2) if onto else []) if "id" in r]
-        timing["find"] = round(time.time() - t, 2)
-        t = time.time()
-        tq = " ".join(text_terms(words, onto))
-        try:
-            ix = f_ix.result()
-            hits = ix.search(tq, limit=limit * 3, per_file=1, snippets=True) if ix else []
-        except Exception as e:  # the ontology alone still answers
-            hits, timing["search_error"] = [], repr(e)[:200]
-        timing["search"] = round(time.time() - t, 2)
+    t = time.time()
+    found = [r for r in (onto.find(q, limit=limit * 2) if onto else []) if "id" in r]
+    timing["find"] = round(timing.get("find", 0) + time.time() - t, 2)
+    t = time.time()
+    try:
+        hits = ix.search(" ".join(text_terms(words, onto)), limit=limit * 3, per_file=1, snippets=True) if ix else []
+    except Exception as e:  # the ontology alone still answers
+        hits, timing["search_error"] = [], repr(e)[:200]
+    timing["search"] = round(timing.get("search", 0) + time.time() - t, 2)
 
     cand: dict[str, dict] = {}
 
@@ -250,7 +252,7 @@ def ask(store, question: str, limit: int = 8, page: bool = True, index_store=Non
             c.setdefault("snippet", h.get("snippet", ""))
             c.setdefault("path", h["path"])
             c.setdefault("cmd", h["cmd"])
-    anchors = anchor_terms(question, words, onto)
+    anchors = anchor_terms(part, words, onto)
     if anchors and onto is not None:
         for a in anchors:  # the nodes a distinctive word points at must be candidates
             for r, n in enumerate(x for x in onto.find(a, limit=3) if "id" in x):
@@ -272,7 +274,38 @@ def ask(store, question: str, limit: int = 8, page: bool = True, index_store=Non
         if "cmd" not in c:
             c["cmd"] = f"tracedb get {c['readme']}" if c.get("readme") else f"tracedb ls {c['id']}/ --limit 50"
         c["score"] = round(c["score"], 4)
-    ranked = sorted(cand.values(), key=lambda c: -c["score"])[:limit]
+    return sorted(cand.values(), key=lambda c: -c["score"])[:limit], q
+
+
+def ask(store, question: str, limit: int = 8, page: bool = True, index_store=None) -> dict:
+    from .index import IndexSet
+    t0 = time.time()
+    timing: dict = {}
+
+    def open_index():  # I/O (catalog freshness, index manifest) overlaps with the ontology load
+        # ontology-sync (every 5 min) keeps the catalog current; a question never waits on a compaction's upsert
+        store.sync_if_stale(float(os.environ.get("TRACEDB_ASK_SYNC_TTL", 1800)))
+        return IndexSet.open(index_store or store, store)
+
+    with ThreadPoolExecutor(1) as ex:
+        f_ix = ex.submit(open_index)
+        onto = _load_onto()
+        try:
+            ix = f_ix.result()
+        except Exception as e:
+            ix, timing["search_error"] = None, repr(e)[:200]
+    parts = split_parts(question)
+    lists, queries = [], []
+    for part in parts:
+        r, q = _rank(part, onto, ix, limit, timing)
+        lists.append(r); queries.append(q)
+    ranked, seen = [], set()
+    for i in range(limit):  # interleave the parts' rankings: each ask gets its best answers near the top
+        for L in lists:
+            if i < len(L) and L[i]["id"] not in seen:
+                seen.add(L[i]["id"]); ranked.append(L[i])
+    ranked = ranked[:limit]
+    q = " | ".join(queries)
 
     out = {"question": question, "query": q, "hits": ranked, "timing": timing}
     if {w.lower() for w in re.findall(r"[A-Za-z]+", question)} & LIVE_WORDS:
