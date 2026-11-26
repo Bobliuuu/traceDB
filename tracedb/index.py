@@ -535,6 +535,35 @@ def _open_gen(st: Store, key: str):
     return sqlite3.connect(f"file:{local}?mode=ro", uri=True), None
 
 
+def prefetch(st: Store, index_store: Store | None = None) -> dict:
+    """Download every generation of the current manifest that is not cached yet and delete cached generations the
+    manifest no longer lists. Run from a timer (ontology-sync) so a query never pays for a merge's new generations:
+    on the laptop the first query after one merge took 55 s, and stale generations had piled up to 4.2 GB."""
+    ist = index_store or st
+    ist.sync()
+    man = _load_manifest(ist)
+    if man is None:
+        return {"mode": "none"}
+    keep, got = set(), 0
+    for g in man["gens"]:
+        e = ist.locate(g["key"])
+        if not e:
+            continue
+        local = os.path.join(ist.dir, "idx-" + e["sha"][:16] + ".sqlite")
+        keep.add(os.path.basename(local))
+        if not os.path.exists(local):
+            ist.read_to_file(g["key"], local + ".tmp")
+            os.replace(local + ".tmp", local)
+            got += 1
+    freed = 0
+    for f in os.listdir(ist.dir):
+        if f.startswith("idx-") and f.endswith(".sqlite") and f not in keep:
+            fp = os.path.join(ist.dir, f)
+            freed += os.path.getsize(fp)
+            os.remove(fp)
+    return {"gens": len(man["gens"]), "downloaded": got, "freed_mb": freed >> 20}
+
+
 def _terms(text: str) -> list[str]:
     return re.findall(r"[A-Za-z0-9_]+", text)
 

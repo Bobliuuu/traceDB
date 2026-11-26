@@ -1,7 +1,7 @@
 import json, os
 import pytest
 from tracedb.store import open_store
-from tracedb.index import build_index, update_index, merge_deltas, IndexSet, chunks_of, make_snippet, _have_apsw
+from tracedb.index import build_index, update_index, merge_deltas, prefetch, IndexSet, chunks_of, make_snippet, _have_apsw
 
 
 def mk(tmp_path):
@@ -165,3 +165,13 @@ def test_merge_deltas(tmp_path):
     assert ix.search("tenpct-g2")[0]["path"] == "config/ssh.txt"      # base still served
     assert ix.search("nccl")[0]["path"] == "traces/codex/b.jsonl"
     assert update_index(st, st, jobs=1, work=work)["mode"] == "noop"  # merged state matches the catalog
+
+
+def test_prefetch_downloads_current_and_prunes_stale(tmp_path):
+    st, work = mk(tmp_path)
+    build_index(st, st, jobs=2, work=work)
+    stale = os.path.join(st.dir, "idx-00000000deadbeef.sqlite")
+    open(stale, "wb").write(b"old generation")
+    r = prefetch(st)
+    assert r["downloaded"] == r["gens"] >= 1 and not os.path.exists(stale)
+    assert prefetch(st)["downloaded"] == 0                      # idempotent

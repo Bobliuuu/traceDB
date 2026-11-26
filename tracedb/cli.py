@@ -59,7 +59,7 @@ def main(argv=None):
     p = sp.add_parser("health", help="sync box heartbeat age (s3://<bucket>/health/heartbeat.json); exit 2 if stale")
     p.add_argument("--max-age-h", type=float, default=3.0)
     p = sp.add_parser("index", help="build/update the v3 sharded search index (reads text from the store, writes index/v3/*)")
-    p.add_argument("action", choices=["build", "update", "merge", "stats"])
+    p.add_argument("action", choices=["build", "update", "merge", "prefetch", "stats"])
     p.add_argument("--prefix", action="append", default=None, help="limit coverage (repeatable); default whole store")
     p.add_argument("--dest-store", help="write the index here instead of into the data store")
     p.add_argument("--jobs", type=int, default=4); p.add_argument("--work")
@@ -148,13 +148,15 @@ def main(argv=None):
                 os.replace(local + ".tmp", local)
             out(SearchIndex.open(local).search(" ".join(a.text), a.prefix, a.limit, a.paths))
         elif a.cmd == "index":
-            from .index import build_index, update_index, merge_deltas, IndexSet
+            from .index import build_index, update_index, merge_deltas, prefetch, IndexSet
             dest = open_store(a.dest_store) if a.dest_store else st
             pf = tuple(a.prefix or [""])
             if a.action == "build":
                 out(build_index(st, dest, pf, a.jobs, a.work))
             elif a.action == "update":
                 out(update_index(st, dest, pf, a.jobs, a.work))
+            elif a.action == "prefetch":
+                out(prefetch(st, dest))
             elif a.action == "merge":
                 out(merge_deltas(st, dest, min(a.jobs, 2), a.work, a.min_deltas))
             else:

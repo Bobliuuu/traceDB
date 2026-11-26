@@ -63,6 +63,54 @@ def plain_query(text: str) -> str:
     return " ".join(keep[:TEXT_TERMS * 2]) if keep else text
 
 
+# "what is running now", "is X stuck": answered from snapshots pb-orch publishes (rsi-sync, stallwatch, the reapers),
+# each shown with its age. Exact live state still needs pb-orch itself (ops/stallwatch, ops/pb-team).
+LIVE_WORDS = {"running", "now", "currently", "live", "stuck", "status", "alive", "idle", "active", "stopped", "dead",
+              "busy", "hung", "stalled", "down", "up"}
+LIVE = {"lanes": "rsi/lanes/pb-orch.json", "stallwatch": "rsi/stallwatch/status.json", "ec2": "rsi/reaper/ec2/status.json"}
+
+
+def _age(ts: str) -> str:
+    import datetime as dt
+    try:
+        t = dt.datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        m = (dt.datetime.now(dt.timezone.utc) - t).total_seconds() / 60
+        return f"{m:.0f} min old" if m < 120 else f"{m / 60:.1f} h old"
+    except Exception:
+        return "age unknown"
+
+
+def live_summary(store) -> dict:
+    import json as _j
+    got = {}
+    for k, path in LIVE.items():
+        try:
+            got[k] = _j.loads(store.read(path, max_bytes=-1))
+        except Exception:
+            pass
+    out = {}
+    L = got.get("lanes")
+    if L:
+        out["lanes"] = {"source": LIVE["lanes"], "age": _age(L.get("generated", "")),
+                        "lanes": [f"{x['lane']}: {x.get('state')}, {len(x.get('live_seats') or [])}/{len(x.get('seats') or [])} seats live"
+                                  + (f" ({', '.join(x['live_seats'][:8])})" if x.get("live_seats") else "") for x in L.get("lanes", [])]}
+    W = got.get("stallwatch")
+    if W:
+        acts: dict = {}
+        for x in W.get("seats", []):
+            acts.setdefault(x.get("action", "?"), []).append(x.get("seat", "?"))
+        bad = [f"{u['unit']}: {u.get('result')}" for u in W.get("units", []) if u.get("result") not in ("success", None)]
+        out["stallwatch"] = {"source": LIVE["stallwatch"], "age": _age(W.get("at", "")),
+                             "seats_by_action": {a: (len(v), v[:10]) for a, v in sorted(acts.items(), key=lambda kv: -len(kv[1]))},
+                             "failed_units": bad}
+    E = got.get("ec2")
+    if E:
+        out["ec2"] = {"source": LIVE["ec2"], "age": _age(E.get("at", "")),
+                      "instances": [f"{x.get('name') or x.get('id')} {x.get('type')} {x.get('lifecycle')} {x.get('age_h')} h: {x.get('action')}"
+                                    for x in E.get("instances", [])]}
+    return out
+
+
 def _onto_dir() -> str | None:
     for d in (os.environ.get("ONTOLAGNI_DIR"), os.environ.get("ONTOLOGY_DIR"), os.path.expanduser("~/ontology")):
         if d and os.path.exists(os.path.join(d, "ontology.jsonl")):
@@ -149,6 +197,10 @@ def ask(store, question: str, limit: int = 8, page: bool = True, index_store=Non
     ranked = sorted(cand.values(), key=lambda c: -c["score"])[:limit]
 
     out = {"question": question, "query": q, "hits": ranked, "timing": timing}
+    if {w.lower() for w in re.findall(r"[A-Za-z]+", question)} & LIVE_WORDS:
+        t = time.time()
+        out["live"] = live_summary(store)
+        timing["live"] = round(time.time() - t, 2)
     if page:
         for c in ranked[:3]:  # inline the best hit that has a page: the answer is usually on it
             if c.get("readme"):
@@ -164,6 +216,21 @@ def ask(store, question: str, limit: int = 8, page: bool = True, index_store=Non
 
 def render(r: dict) -> str:
     L = [f"# ask: {r['question']}   (query: {r['query']}; {r['timing'].get('total')} s)"]
+    lv = r.get("live")
+    if lv:
+        L += ["", "## live state (snapshots published from pb-orch; exact state: ssh pb-orch, see ops/stallwatch)"]
+        if "lanes" in lv:
+            L.append(f"lanes ({lv['lanes']['source']}, {lv['lanes']['age']}):")
+            L += [f"  - {x}" for x in lv["lanes"]["lanes"]]
+        if "stallwatch" in lv:
+            w = lv["stallwatch"]
+            L.append(f"seats by stallwatch action ({w['source']}, {w['age']}):")
+            L += [f"  - {a}: {n}  {', '.join(v)}{' ...' if n > len(v) else ''}" for a, (n, v) in w["seats_by_action"].items()]
+            if w["failed_units"]:
+                L.append("  failed timer units: " + "; ".join(w["failed_units"]))
+        if "ec2" in lv:
+            L.append(f"EC2 instances ({lv['ec2']['source']}, {lv['ec2']['age']}):")
+            L += [f"  - {x}" for x in lv["ec2"]["instances"]]
     p = r.get("page")
     if p:
         L += ["", f"## best page: {p['id']}   (tracedb get {p['path']})", "", p["text"].rstrip()]
