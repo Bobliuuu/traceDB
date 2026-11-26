@@ -20,7 +20,7 @@ STOP = set("""a an the is are was were be been being am of to in on at for and o
 which who whom whose where when why can could should would will shall may might must we i me my you your our ours it its
 this that these those with from by about into onto as any there their them they he she his her have has had get got
 use used using make made find show tell give need want let s t please one some all just only also than then so if
-whats wheres hows does doesn dont don""".split())
+whats wheres hows does doesn dont don go goes much many""".split())
 CURATED = {"ops": 3.0, "memory": 2.5, "policy": 2.0, "skills": 1.5, "projects": 1.3}  # rank boost by top-level id
 RRF_K = 10
 PAGE_BUDGET = 6000
@@ -101,14 +101,16 @@ def ask(store, question: str, limit: int = 8, page: bool = True, index_store=Non
         c.update({k: n[k] for k in ("kind", "summary", "readme") if n.get(k)})
     for r, h in enumerate(hits):
         c = slot(_owner(onto, h["path"]))
-        c["score"] += 1.0 / (RRF_K + r)
-        if "text" not in c["via"]:
+        if "text" not in c["via"]:  # an owner counts its best text hit only: 500 matching files in one dir is one answer
+            c["score"] += 1.0 / (RRF_K + r)
             c["via"].append("text")
             c.setdefault("snippet", h.get("snippet", ""))
             c.setdefault("path", h["path"])
             c.setdefault("cmd", h["cmd"])
     for c in cand.values():
-        c["score"] *= CURATED.get(c["id"].split("/")[0], 1.0) * (1.25 if len(c["via"]) > 1 else 1.0)
+        top = c["id"].split("/")
+        page = CURATED.get(top[0], 1.0) if len(top) <= 2 else 1.0  # the curated pages themselves, not data under them
+        c["score"] *= page * (1.25 if len(c["via"]) > 1 else 1.0)
         if onto is not None and c["id"] in onto.nodes:
             n = onto.nodes[c["id"]]
             c.setdefault("summary", n.get("summary", ""))

@@ -28,3 +28,14 @@
 {"q": "one ssh key on every box", "want": ["memory/ssh-one-key-rule"]}
 {"q": "signalwire", "want": ["ops/signalwire"]}
 {"q": "vchip build farm", "want": ["ops/vchip-build-farm", "memory/vchip-top-priority"]}
+{"q": "how much did we spend on vast", "want": ["rsi/vast-audit", "rsi/vast-guard", "rsi/usage"], "set": "heldout"}
+{"q": "magni price snapshot", "want": ["ops/magni-price-snap"], "set": "heldout"}
+{"q": "who owns the recipe catalog", "want": ["memory/recipe-catalog"], "set": "heldout"}
+{"q": "which boxes are always on and cannot be turned off", "want": ["memory/amd-boxes-first"], "set": "heldout"}
+{"q": "should I open a pull request", "want": ["memory/push-to-main"], "set": "heldout"}
+{"q": "where do cuda runs go", "want": ["memory/cuda-to-rsi"], "set": "heldout"}
+{"q": "rl rollouts isaac sim lane", "want": ["memory/rlx-lane"], "set": "heldout"}
+{"q": "qwen3.8 27b gb10 results", "want": ["projects/qwen3.8-27b-gb10"], "set": "heldout"}
+{"q": "deepseek v4.1 flash single user speed", "want": ["projects/deepseek-v4.1-flash-1u"], "set": "heldout"}
+{"q": "glm 5.3 flash on b300", "want": ["projects/glm-5.3-flash-b300"], "set": "heldout"}
+{"q": "kv cache tiering nvfp4 b200", "want": ["projects/kvtier-nvfp4-b200", "gap-lane-kvtier"], "set": "heldout"}
