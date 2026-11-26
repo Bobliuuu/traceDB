@@ -179,13 +179,21 @@ class Store:
             self.db.begin_write()
             try:
                 rebuild, new = self._missing(ids) or (False, [])
+                cur = None
                 if rebuild:
-                    log.info("sync: compaction replaced segments, rebuilding catalog from %d segment(s)", len(ids))
-                    self.db.execute("DELETE FROM entries"); self.db.execute("DELETE FROM segs")
+                    # HEAD is only appended to or compacted, and a compaction keeps every path, so the merged segment
+                    # upserts onto the catalog we hold: write only rows that differ. DELETE + re-insert of ~1M rows took
+                    # 30-60 s per reader after every compaction (~every 20 min) and stalled every writer sharing it.
+                    log.info("sync: compaction replaced segments, upserting changed rows from %d segment(s)", len(ids))
+                    self.db.execute("DELETE FROM segs")
+                    cur = {r[0]: hash((r[1], r[2], r[3])) for r in self.db.execute("SELECT path,sha,meta,exts FROM entries")}
                 late = [i for i in new if i not in blobs]  # a plan built before another process's rebuild
                 blobs.update(self._fetch_segments(late))
                 for i in new:
-                    self._apply([json.loads(l) for l in zlib.decompress(blobs[i]).splitlines()])
+                    rows = [json.loads(l) for l in zlib.decompress(blobs[i]).splitlines()]
+                    if cur is not None:
+                        rows = [r for r in rows if cur.get(r["p"]) != hash(self._row_key(r))]
+                    self._apply(rows)
                     self.db.execute("INSERT OR REPLACE INTO segs VALUES(?,?)", (i, ids.index(i)))
                 self.db.commit()
             except BaseException:
@@ -215,6 +223,12 @@ class Store:
                 os.utime(self._stamp)
         except OSError:
             pass
+
+    @classmethod
+    def _row_key(cls, r) -> tuple:
+        """(sha, meta, exts) exactly as _apply stores them, to skip rows the catalog already holds."""
+        return (r["h"], json.dumps(r.get("m") or {}, separators=(",", ":")),
+                json.dumps(cls._exts_of(r), separators=(",", ":")))
 
     @staticmethod
     def _exts_of(r) -> list:

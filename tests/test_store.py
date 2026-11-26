@@ -141,3 +141,26 @@ def test_corrupt_segment_rejected(tmp_path):
     b = Store(be, cache_dir=str(tmp_path / "cb"), name="b")
     with pytest.raises(IOError):
         b.sync()
+
+
+def test_sync_after_foreign_compaction_upserts_only_changes(tmp_path):
+    """Another process compacts while this one holds a synced catalog: sync must keep every entry, pick up the
+    rows it had not seen, and rewrite none of the rows it already holds (no DELETE + full rebuild)."""
+    b = LocalBackend(tmp_path / "bucket")
+    a = Store(b, cache_dir=str(tmp_path / "ca"), name="t")
+    c = Store(b, cache_dir=str(tmp_path / "cc"), name="t")
+    d = mk(12)
+    items = list(d.items())
+    for p, x in items[:8]:
+        a.put([(p, x, None)])
+    a.sync()
+    for p, x in items[8:]:          # rows `a` has not seen yet
+        c.put([(p, x, None)])
+    c.compact()
+    applied = []
+    orig = a._apply
+    a._apply = lambda rows: (applied.extend(r["p"] for r in rows), orig(rows))
+    a.sync()
+    assert sorted(applied) == sorted(p for p, _ in items[8:])
+    assert a.count() == 12 and all(a.read(p) == x for p, x in items)
+    assert {r[0] for r in a.db.execute("SELECT id FROM segs")} == set(json.loads(b.get("HEAD"))["segments"])
