@@ -1,0 +1,30 @@
+{"q": "where is the rsi vis", "want": ["ops/rsi-vis"]}
+{"q": "how do I get aws credentials without logging in", "want": ["ops/aws-credentials"]}
+{"q": "which model weights volume do seats share", "want": ["ops/rsi-weights"]}
+{"q": "tracedb put fails with database is locked", "want": ["ops/tracedb-ingest"]}
+{"q": "opencode glm subscription", "want": ["ops/opencode"]}
+{"q": "how are repos mirrored into magni-hq", "want": ["ops/org-sync", "memory/magni-hq-repos"]}
+{"q": "what resumes stopped seats", "want": ["ops/stallwatch", "rsi/stallwatch", "memory/never-blocked"]}
+{"q": "what counts as a fair comparison", "want": ["ops/fair-comparison"]}
+{"q": "intel arc b390 box", "want": ["ops/gpu-boxes", "boxes/", "memory/gpu-boxes"]}
+{"q": "how does the vault get synced", "want": ["ops/vault-sync"]}
+{"q": "twilio phone agent", "want": ["ops/twilio", "memory/ufc-lane"]}
+{"q": "push-boxes team seats", "want": ["ops/pb-team", "memory/pb-team-autoresearch"]}
+{"q": "lever library predicate", "want": ["ops/rsi-levers"]}
+{"q": "who kills idle ec2 boxes", "want": ["ops/ec2-reaper", "memory/idle-box-holes"]}
+{"q": "can I run things on the laptop", "want": ["ops/laptop-volatile", "memory/laptop-volatile"]}
+{"q": "what is the fnx lane", "want": ["memory/fnx-lane", "ops/spark2", "projects/spark2-flashnext"]}
+{"q": "super recipe qwen3.8 27b h100", "want": ["memory/super-recipe", "super-recipe"]}
+{"q": "zac recipe glm 5.3 on 8 h100", "want": ["memory/super-recipe", "zac-recipe"]}
+{"q": "kvx onetriangle scoreboard", "want": ["memory/kvx-beat-onetriangle", "clone-push-kvx"]}
+{"q": "h2h lane companies to beat", "want": ["memory/h2h-lane", "clone-push-h2h"]}
+{"q": "which onetriangle repo must we never touch", "want": ["memory/never-touch-onetriangle-repo"]}
+{"q": "can we buy reserved capacity or dedicated hosts", "want": ["memory/no-commitment-purchases"]}
+{"q": "inkling gpu box hold", "want": ["memory/inkling-box-hold"]}
+{"q": "how do recipes get published as repos", "want": ["memory/recipes-are-repos", "ops/magni"]}
+{"q": "rsi decisions log", "want": ["rsi/decisions"]}
+{"q": "box reaper log", "want": ["rsi/reaper", "rsi/box-reaper", "skills/reap-idle-boxes"]}
+{"q": "claude usage per seat", "want": ["rsi/usage"]}
+{"q": "one ssh key on every box", "want": ["memory/ssh-one-key-rule"]}
+{"q": "signalwire", "want": ["ops/signalwire"]}
+{"q": "vchip build farm", "want": ["ops/vchip-build-farm", "memory/vchip-top-priority"]}

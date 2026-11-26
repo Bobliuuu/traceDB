@@ -51,6 +51,11 @@ def main(argv=None):
     p.add_argument("--index", default="index/fts.sqlite", help="legacy single-file index key (used only if no v3 index exists)")
     p.add_argument("--index-store", help="store holding the v3 index (default: the data store)")
     p.add_argument("--no-snippets", action="store_true", help="skip re-reading hit bytes for snippets")
+    p = sp.add_parser("ask", help="answer a question in one call: ontology + full text in parallel, best page inline")
+    p.add_argument("text", nargs="+"); p.add_argument("--limit", type=int, default=8)
+    p.add_argument("--no-page", action="store_true", help="do not print the best page inline")
+    p.add_argument("--json", action="store_true", default=argparse.SUPPRESS)
+    p.add_argument("--index-store", help="store holding the v3 index (default: the data store)")
     p = sp.add_parser("health", help="sync box heartbeat age (s3://<bucket>/health/heartbeat.json); exit 2 if stale")
     p.add_argument("--max-age-h", type=float, default=3.0)
     p = sp.add_parser("index", help="build/update the v3 sharded search index (reads text from the store, writes index/v3/*)")
@@ -113,6 +118,10 @@ def main(argv=None):
             else:
                 d = get_blob(st, a.path, a.start, a.end, a.max_bytes)
                 (open(a.out, "wb") if a.out else sys.stdout.buffer).write(d)
+        elif a.cmd == "ask":
+            from .ask import ask, render
+            r = ask(st, " ".join(a.text), a.limit, not a.no_page, open_store(a.index_store) if a.index_store else None)
+            print(json.dumps(r) if a.json else render(r)); return 0
         elif a.cmd == "search":
             from .search import SearchIndex
             from .index import IndexSet
