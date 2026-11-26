@@ -21,7 +21,7 @@ DEFAULT = """# SRC<TAB>STORE_PREFIX<TAB>PRUNE_DAYS<TAB>extra rsync excludes (com
 EXCL = [".git", "node_modules", "__pycache__", ".venv", "venv", ".DS_Store", "*.pem", "*.sock", "*.sqlite-wal", "*.sqlite-shm", ".cache"]
 
 
-def rsync_bin():
+def rsync_bin():  # needs real rsync (brew install rsync): macOS openrsync cannot talk to rrsync
     for p in ("/opt/homebrew/bin/rsync", "/usr/local/bin/rsync", "/usr/bin/rsync"):
         if os.path.exists(p): return p
     return "rsync"
@@ -59,7 +59,7 @@ def load_conf():
 def push(src, prefix, extra):
     if not os.path.exists(src): return 0, "missing"
     ssh = "ssh -o BatchMode=yes -o ConnectTimeout=20 -o ServerAliveInterval=30"
-    base = [rsync_bin(), "-rlt", "--partial-dir=.rsync-partial", "--chmod=Du=rwx,Dgo=rx,Fu=rw,Fgo=r", "--timeout=300", "-e", ssh] + [f"--exclude={x}" for x in EXCL + extra]
+    base = [rsync_bin(), "-rlt", "-O", "--partial-dir=.rsync-partial", "--chmod=Du=rwx,Dgo=rx,Fu=rw,Fgo=r", "--timeout=300", "-e", ssh] + [f"--exclude={x}" for x in EXCL + extra]
     if os.path.isfile(src):
         cmd = base + [src, f"{ALIAS}:in/{prefix}/{os.path.basename(src)}"]
     else:
@@ -72,8 +72,7 @@ def ensure_dirs(rows):
     """rrsync gives no shell; create in/<prefix>/ by syncing an empty skeleton."""
     sk = os.path.join(CACHE, "skel"); shutil.rmtree(sk, ignore_errors=True)
     for _, prefix, _, _ in rows: os.makedirs(os.path.join(sk, "in", prefix), exist_ok=True)
-    os.makedirs(os.path.join(sk, "ack"), exist_ok=True)
-    return run([rsync_bin(), "-r", "-e", "ssh -o BatchMode=yes -o ConnectTimeout=20", sk + "/", f"{ALIAS}:"])
+    return run([rsync_bin(), "-r", "-O", "--chmod=Du=rwx,Dgo=rx", "-e", "ssh -o BatchMode=yes -o ConnectTimeout=20", sk + "/", f"{ALIAS}:"])
 
 
 def fetch_ack():
