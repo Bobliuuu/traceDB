@@ -32,7 +32,8 @@ REDACT = [(re.compile(p, f), r) for p, f, r in [
     (rb"\bsk-(ant-|proj-|or-v1-)?[A-Za-z0-9_-]{20,}", 0, b"[REDACTED:API_KEY]"),
     (rb"\bgh[pousr]_[A-Za-z0-9]{30,}\b|\bgithub_pat_[A-Za-z0-9_]{40,}\b", 0, b"[REDACTED:GH_TOKEN]"),
     (rb"\bhf_[A-Za-z0-9]{30,}\b", 0, b"[REDACTED:HF_TOKEN]"),
-    (rb"(?i)((?:api[_-]?key|apikey|secret|passwd|password|token)[\"']?\s*[:=]\s*[\"']?)[A-Za-z0-9_\-./+=]{24,}", 0,
+    # the value must hold a digit: real keys do, resource names (secret:machine-keys/tracedb-agent) usually do not
+    (rb"(?i)((?:api[_-]?key|apikey|secret|passwd|password|token)[\"']?\s*[:=]\s*[\"']?)(?=[A-Za-z0-9_\-./+=]*\d)[A-Za-z0-9_\-./+=]{24,}", 0,
      rb"\1[REDACTED:CRED]"),
 ]]
 
