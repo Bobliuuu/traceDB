@@ -24,7 +24,7 @@ SOURCES = {  # root -> (source dir, glob, keywords added to every node)
     "memory": (pathlib.Path(os.environ.get("MEMORY_DIR", pathlib.Path.home() / "tracedb-work/memory/laptop")), "*.md",
                "memory rule user feedback project lane decision what the user said"),
 }
-TEXT_CAP = 4000
+TEXT_CAP = 8000  # whole runbook pages: a word in the last row of a table still finds it
 
 REDACT = [(re.compile(p, f), r) for p, f, r in [
     (rb"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----", re.S, b"[REDACTED:PRIVATE_KEY]"),
