@@ -121,7 +121,11 @@ def main(argv=None):
         elif a.cmd == "ask":
             from .ask import ask, render
             r = ask(st, " ".join(a.text), a.limit, not a.no_page, open_store(a.index_store) if a.index_store else None)
-            print(json.dumps(r) if a.json else render(r)); return 0
+            try:
+                print(json.dumps(r) if a.json else render(r), flush=True)
+            except BrokenPipeError:  # `tracedb ask ... | head`
+                os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+            return 0
         elif a.cmd == "search":
             from .search import SearchIndex
             from .index import IndexSet

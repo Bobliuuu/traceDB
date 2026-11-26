@@ -8,7 +8,7 @@ Read path: local catalog (SQLite, point lookup ~10-50us) -> coalesced ranged GET
 Every read is byte-budgeted so an agent can never accidentally pull a huge amount.
 """
 from __future__ import annotations
-import hashlib, json, logging, os, sqlite3, threading, time, zlib
+import hashlib, json, logging, os, re, sqlite3, threading, time, zlib
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Iterable, Optional
@@ -62,6 +62,10 @@ CREATE INDEX IF NOT EXISTS entries_sha ON entries(sha);
 CREATE TABLE IF NOT EXISTS segs(id TEXT PRIMARY KEY, ord INTEGER);
 CREATE TABLE IF NOT EXISTS kv(k TEXT PRIMARY KEY, v TEXT);
 """
+
+
+# segment line -> (path as JSON, sha, first extent's pack, first extent's offset); flat and multi-extent ("e") rows
+_ROW_KEY = re.compile(rb'\{"p":("(?:[^"\\]|\\.)*"),"h":"([0-9a-f]*)","n":\d+,(?:"e":\[\{)?"k":"([^"]*)","o":(\d+)')
 
 
 def _sha(b: bytes) -> str:
@@ -179,21 +183,26 @@ class Store:
             self.db.begin_write()
             try:
                 rebuild, new = self._missing(ids) or (False, [])
-                cur = None
+                known = None
                 if rebuild:
                     # HEAD is only appended to or compacted, and a compaction keeps every path, so the merged segment
-                    # upserts onto the catalog we hold: write only rows that differ. DELETE + re-insert of ~1M rows took
-                    # 30-60 s per reader after every compaction (~every 20 min) and stalled every writer sharing it.
+                    # upserts onto the catalog we hold: write only rows we do not hold. DELETE + re-insert of ~1M rows
+                    # took 30-60 s per reader after every compaction (~every 20 min) and stalled every writer sharing it.
+                    # A row is identified by (path, sha, first extent's pack + offset): the same content re-put after
+                    # a change lands in a new pack, so (path, sha) alone is not enough. Matching that key on the raw
+                    # line skips the JSON parse of the ~1M unchanged lines (17 s -> ~5 s); a line the pattern does not
+                    # match is parsed and applied as before.
                     log.info("sync: compaction replaced segments, upserting changed rows from %d segment(s)", len(ids))
                     self.db.execute("DELETE FROM segs")
-                    cur = {r[0]: hash((r[1], r[2], r[3])) for r in self.db.execute("SELECT path,sha,meta,exts FROM entries")}
+                    known = {(json.dumps(p).encode(), h.encode(), (k or "").encode(), str(o).encode())
+                             for p, h, k, o in self.db.execute("SELECT path,sha,pack,off FROM entries")}
                 late = [i for i in new if i not in blobs]  # a plan built before another process's rebuild
                 blobs.update(self._fetch_segments(late))
                 for i in new:
-                    rows = [json.loads(l) for l in zlib.decompress(blobs[i]).splitlines()]
-                    if cur is not None:
-                        rows = [r for r in rows if cur.get(r["p"]) != hash(self._row_key(r))]
-                    self._apply(rows)
+                    lines = zlib.decompress(blobs[i]).splitlines()
+                    if known is not None:
+                        lines = [l for l in lines if (m := _ROW_KEY.match(l)) is None or m.groups() not in known]
+                    self._apply([json.loads(l) for l in lines])
                     self.db.execute("INSERT OR REPLACE INTO segs VALUES(?,?)", (i, ids.index(i)))
                 self.db.commit()
             except BaseException:
@@ -223,12 +232,6 @@ class Store:
                 os.utime(self._stamp)
         except OSError:
             pass
-
-    @classmethod
-    def _row_key(cls, r) -> tuple:
-        """(sha, meta, exts) exactly as _apply stores them, to skip rows the catalog already holds."""
-        return (r["h"], json.dumps(r.get("m") or {}, separators=(",", ":")),
-                json.dumps(cls._exts_of(r), separators=(",", ":")))
 
     @staticmethod
     def _exts_of(r) -> list:
