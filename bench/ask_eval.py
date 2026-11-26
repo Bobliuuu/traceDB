@@ -11,7 +11,6 @@ the way an agent calls it. Run on pb-orch (never the laptop):
 """
 import argparse, json, os, pathlib, subprocess, sys, time
 
-HERE = pathlib.Path(__file__).resolve().parent
 BIN = pathlib.Path(sys.executable).parent
 
 
@@ -53,6 +52,7 @@ def main():
     ap.add_argument("--methods", default="find,search,ask")
     ap.add_argument("--k", type=int, default=5)
     ap.add_argument("--questions", default=os.path.expanduser("~/tracedb-work/search-eval/real.jsonl"))
+    ap.add_argument("--json-out", help="also write the summary as JSON here")
     a = ap.parse_args()
     qs = [json.loads(l) for l in open(a.questions) if l.strip()]
     ms = a.methods.split(",")
@@ -68,6 +68,10 @@ def main():
     print()
     for m, (h, s, mx) in tot.items():
         print(f"{m:7s} top-{a.k} hit {h}/{len(qs)}  mean {s / len(qs):.1f}s  max {mx:.1f}s")
+    if a.json_out:
+        with open(a.json_out, "w") as f:
+            json.dump({m: {"hit": h, "n": len(qs), "mean_s": round(s / len(qs), 2), "max_s": round(mx, 2)}
+                       for m, (h, s, mx) in tot.items()}, f)
 
 
 if __name__ == "__main__":

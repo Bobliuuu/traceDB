@@ -1,0 +1,6 @@
+[Unit]
+Description=Grow and score the search eval daily; alert on a drop (traceDB bench/search_watch.sh)
+[Service]
+Type=oneshot
+Nice=10
+ExecStart=/bin/bash %h/code/traceDB/bench/search_watch.sh
