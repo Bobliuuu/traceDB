@@ -80,18 +80,56 @@ def _age(ts: str) -> str:
         return "age unknown"
 
 
+LIVE_HOST = os.environ.get("TRACEDB_ASK_LIVE_HOST", "pb-orch")
+# run where the lanes live: the lane registry (0.06 s) and stallwatch's own status file, both read fresh
+_LIVE_SH = ("set -e; cd ~/rsi-system; mkdir -p ~/.cache/ask-live; "
+            "python3 lab/rsi-vis/lanes.py --host pb-orch --out ~/.cache/ask-live/lanes.json >/dev/null; "
+            "echo @@lanes; cat ~/.cache/ask-live/lanes.json; echo; echo @@stallwatch; cat ~/.local/state/stallwatch/status.json")
+
+
+def _live_fetch() -> tuple[dict, str]:
+    """Current lanes + stallwatch status straight from the lane host: locally when this is that host, else one
+    `ssh` (5 s connect timeout). ({}, why) when neither works; the caller falls back to the published snapshots."""
+    import json as _j, subprocess
+    if os.environ.get("TRACEDB_ASK_LIVE", "1") == "0":
+        return {}, "off"
+    here = os.path.exists(os.path.expanduser("~/.local/state/stallwatch/status.json")) and \
+        os.path.exists(os.path.expanduser("~/rsi-system/lab/rsi-vis/lanes.py"))
+    cmd = ["bash", "-c", _LIVE_SH] if here else \
+        ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", LIVE_HOST, _LIVE_SH]
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
+    except Exception as e:
+        return {}, f"unreachable ({type(e).__name__})"
+    out, key, buf = {}, None, []
+    for line in r.stdout.splitlines() + ["@@end"]:
+        if line.startswith("@@"):
+            if key and buf:
+                try:
+                    out[key] = _j.loads("\n".join(buf))
+                except ValueError:
+                    pass
+            key, buf = line[2:], []
+        else:
+            buf.append(line)
+    return out, ("local" if here else f"ssh {LIVE_HOST}")
+
+
 def live_summary(store) -> dict:
     import json as _j
-    got = {}
+    got, how = _live_fetch()
+    src = {k: f"live via {how}" for k in got}
     for k, path in LIVE.items():
-        try:
-            got[k] = _j.loads(store.read(path, max_bytes=-1))
-        except Exception:
-            pass
+        if k not in got:
+            try:
+                got[k] = _j.loads(store.read(path, max_bytes=-1))
+                src[k] = path
+            except Exception:
+                pass
     out = {}
     L = got.get("lanes")
     if L:
-        out["lanes"] = {"source": LIVE["lanes"], "age": _age(L.get("generated", "")),
+        out["lanes"] = {"source": src["lanes"], "age": _age(L.get("generated", "")),
                         "lanes": [f"{x['lane']}: {x.get('state')}, {len(x.get('live_seats') or [])}/{len(x.get('seats') or [])} seats live"
                                   + (f" ({', '.join(x['live_seats'][:8])})" if x.get("live_seats") else "") for x in L.get("lanes", [])]}
     W = got.get("stallwatch")
@@ -100,12 +138,12 @@ def live_summary(store) -> dict:
         for x in W.get("seats", []):
             acts.setdefault(x.get("action", "?"), []).append(x.get("seat", "?"))
         bad = [f"{u['unit']}: {u.get('result')}" for u in W.get("units", []) if u.get("result") not in ("success", None)]
-        out["stallwatch"] = {"source": LIVE["stallwatch"], "age": _age(W.get("at", "")),
+        out["stallwatch"] = {"source": src["stallwatch"], "age": _age(W.get("at", "")),
                              "seats_by_action": {a: (len(v), v[:10]) for a, v in sorted(acts.items(), key=lambda kv: -len(kv[1]))},
                              "failed_units": bad}
     E = got.get("ec2")
     if E:
-        out["ec2"] = {"source": LIVE["ec2"], "age": _age(E.get("at", "")),
+        out["ec2"] = {"source": src["ec2"], "age": _age(E.get("at", "")),
                       "instances": [f"{x.get('name') or x.get('id')} {x.get('type')} {x.get('lifecycle')} {x.get('age_h')} h: {x.get('action')}"
                                     for x in E.get("instances", [])]}
     return out
@@ -173,7 +211,8 @@ def ask(store, question: str, limit: int = 8, page: bool = True, index_store=Non
     timing = {}
 
     def open_index():  # I/O (catalog freshness, index manifest) overlaps with the ontology load
-        store.sync_if_stale(float(os.environ.get("TRACEDB_ASK_SYNC_TTL", 300)))
+        # ontology-sync (every 5 min) keeps the catalog current; a question never waits on a compaction's upsert
+        store.sync_if_stale(float(os.environ.get("TRACEDB_ASK_SYNC_TTL", 1800)))
         return IndexSet.open(index_store or store, store)
 
     with ThreadPoolExecutor(1) as ex:
@@ -257,7 +296,7 @@ def render(r: dict) -> str:
     L = [f"# ask: {r['question']}   (query: {r['query']}; {r['timing'].get('total')} s)"]
     lv = r.get("live")
     if lv:
-        L += ["", "## live state (snapshots published from pb-orch; exact state: ssh pb-orch, see ops/stallwatch)"]
+        L += ["", "## live state (read from pb-orch now when reachable, else its published snapshots; see ops/stallwatch)"]
         if "lanes" in lv:
             L.append(f"lanes ({lv['lanes']['source']}, {lv['lanes']['age']}):")
             L += [f"  - {x}" for x in lv["lanes"]["lanes"]]

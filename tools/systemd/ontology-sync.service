@@ -1,0 +1,5 @@
+[Unit]
+Description=Pull the published ontology into ~/ontology
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/ontology-sync

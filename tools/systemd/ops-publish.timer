@@ -1,0 +1,8 @@
+[Unit]
+Description=Republish ops + memory pages every 10 minutes when changed
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=10min
+Persistent=true
+[Install]
+WantedBy=timers.target

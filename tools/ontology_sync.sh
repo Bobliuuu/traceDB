@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ontology_sync.sh -- keep this machine's read copies current, so a search never waits on a download.
-# Installed as ~/.local/bin/ontology-sync, run by ontology-sync.timer every 10 min (laptop and pb-orch).
+# Installed as ~/.local/bin/ontology-sync, run by ontology-sync.timer every 5 min (laptop and pb-orch).
 #   1. pull the published ontology into $ONTOLOGY_DIR (what `ontolagni find` and `tracedb ask` read)
 #   2. tracedb index prefetch: download new search-index generations, delete ones the manifest dropped
 set -euo pipefail

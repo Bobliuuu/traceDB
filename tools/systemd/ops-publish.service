@@ -1,0 +1,5 @@
+[Unit]
+Description=Republish ops runbook + user memory to traceDB/ontology when changed (traceDB tools/publish_changed.sh)
+[Service]
+Type=oneshot
+ExecStart=/bin/bash %h/code/traceDB/tools/publish_changed.sh

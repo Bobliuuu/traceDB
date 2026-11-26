@@ -1,0 +1,5 @@
+[Unit]
+Description=Back up the laptop's Claude memory to pb-orch for publishing (memory-push)
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/memory-push

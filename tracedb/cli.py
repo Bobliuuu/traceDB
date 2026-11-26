@@ -130,7 +130,8 @@ def main(argv=None):
         elif a.cmd == "search":
             from .search import SearchIndex
             from .index import IndexSet
-            st.sync_if_stale()
+            # search can be minutes stale (ontology-sync refreshes the catalog every 5 min): never pay a compaction here
+            st.sync_if_stale(float(os.environ.get("TRACEDB_SEARCH_SYNC_TTL", 600)))
             ist = open_store(a.index_store) if a.index_store else st
             if ist is not st:
                 ist.sync_if_stale()
