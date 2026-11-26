@@ -76,9 +76,20 @@ fine-grained token (all repositories, Contents and Metadata read-only) and store
 It needs SSH keys on the box, which `tools/box_ssh_pull.sh` can restore from the vault. That gives the box a route to
 every machine, so it is **opt-in and needs the owner's approval**. Nothing is enabled today.
 
+## Mac limits
+
+- macOS privacy settings block the launchd job from `~/Desktop` and folders under `~/Documents` until
+  `/usr/bin/python3` (or the Python app it launches) has Full Disk Access. The pusher lists blocked folders in its status
+  file and exits 1.
+- Work directories send only files changed after the cutover stamp, and never `.git`. Unpushed commits, branches and
+  stashes reach tracedb only after a push to GitHub. A new work directory must be added to `~/.config/tracedb-push.tsv`.
+
 ## Not covered
 
-Modal and Vast artifacts are not pulled by the box. Work on other machines reaches tracedb only through GitHub, the
+- The human wiki is published to S3 with the ontology, but the box does not redeploy it to any wiki web server (the old
+  Mac script did that with SSM Run Command, which this role does not have).
+
+- Modal and Vast artifacts are not pulled by the box. Work on other machines reaches tracedb only through GitHub, the
 buckets, the Mac push, or an approved `box-pull.txt` entry.
 
 ## GitHub repo capture
