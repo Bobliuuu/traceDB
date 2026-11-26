@@ -4,7 +4,7 @@
 # store writes wrapped in the shared mkdir lock logs/store-write.lock. Runs at nice 19 (also set in the plist).
 # Steps: snapshot -> changed-source ingest (redacted) -> vault originals -> blobs -> git bundles -> index update -> ontology/wiki.
 # Log: ~/tracedb-work/logs/auto-<UTC stamp>.log     Manual run: bash ~/tracedb-work/auto-sync.sh
-export PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH
+export PATH=$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH
 cd ~/tracedb-work || exit 1
 mkdir -p logs state snap
 STAMPNAME=$(date -u +%Y%m%dT%H%M%SZ); LOG=logs/auto-$STAMPNAME.log
@@ -31,6 +31,9 @@ if pgrep -f "(^|/)(ingest|ingest_blobs|vault_ingest|git_capture)\.py" >/dev/null
 FREE_GB=$(df -g ~ | awk 'NR==2{print $4}'); if [ "${FREE_GB:-0}" -lt 6 ]; then alert "only ${FREE_GB}G free disk (<6G): prune the Mac (see logs/prune-*.log)"; exit 2; fi
 [ "${FREE_GB:-0}" -lt 15 ] && log "WARN low disk ${FREE_GB}G"
 
+# a broken CLI (e.g. Homebrew python/libexpat mismatch) must not be reported as expired credentials
+aws --version >/dev/null 2>&1 || { alert "aws CLI at $(command -v aws) is broken or missing (this is NOT an expired login)"; exit 2; }
+log "aws: $(command -v aws)"
 # credentials: long-lived `tracedb` profile if it works, else lab; no prompts when expired
 if aws configure list-profiles 2>/dev/null | grep -qx tracedb && aws sts get-caller-identity --profile tracedb >/dev/null 2>&1; then export AWS_PROFILE=tracedb
 elif aws sts get-caller-identity --profile lab >/dev/null 2>&1; then export AWS_PROFILE=lab
