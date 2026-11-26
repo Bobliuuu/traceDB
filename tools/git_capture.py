@@ -14,13 +14,13 @@ Needs env TRACEDB_STORE and VAULT_STORE. Holds mkdir lock logs/store-write.lock 
 State (skip unchanged repos): ~/tracedb-work/state/git-capture.json
 """
 import atexit, hashlib, io, json, os, re, subprocess, sys, tarfile, tempfile, time
-sys.path.insert(0, os.path.expanduser("~/tracedb-work")); sys.path.insert(0, os.path.expanduser("~/tracedb-work/traceDB"))
+_W = os.environ.get("TRACEDB_WORK", os.path.expanduser("~/tracedb-work")); sys.path.insert(0, _W); sys.path.insert(0, os.path.join(_W, "traceDB"))
 import ingest as I
 from tracedb.store import open_store
 from tracedb.blob import put_blob, sha256_file
 
 HOME = os.path.expanduser("~")
-WORK = os.path.join(HOME, "tracedb-work")
+WORK = os.environ.get("TRACEDB_WORK", os.path.join(HOME, "tracedb-work"))
 LOCK = os.path.join(WORK, "logs", "store-write.lock")
 STATE = os.path.join(WORK, "state", "git-capture.json")
 SKIPLOG = os.path.join(WORK, "logs", "git-capture-skips.jsonl")
